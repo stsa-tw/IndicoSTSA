@@ -319,6 +319,29 @@ renders their default instance, so a bold request would come out at regular
 weight; hierarchy is built from size, colour and the serif/sans contrast, which
 do arrive.
 
+### Emoji
+
+An event called 秋季迎新晚會 🎉 printed a crossed box where the emoji should be:
+no CJK font has emoji glyphs, and ReportLab draws `.notdef` for a codepoint the
+font is missing. There is no fixing that within the text path — a `Paragraph` is
+drawn in exactly one face, and Indico strips inline markup out of the text before
+it gets there, so a second font cannot be asked for mid-line.
+
+So a line that needs two fonts is not drawn as text. It is composed run by run,
+each run in the font that has the glyphs, and handed back as an image — which
+the badge renderer already knows how to place. Everything else stays on the
+vector text path; only the lines that would have been boxes change. The image is
+composed at 4× and the box is sized to what came out, so it stays crisp and is
+never stretched.
+
+The emoji are **monochrome** (Noto Emoji, OFL, shipped with the plugin). That is
+deliberate as well as convenient: tickets are usually printed, often in black
+and white, and colour emoji are bitmap fonts that ReportLab cannot embed at all.
+
+If the font is ever missing, or composing fails, the characters are dropped
+instead. A title reading 秋季迎新晚會 is a small loss; one reading 秋季迎新晚會 ⊠
+looks broken.
+
 ## Working with the group registration plugin
 
 Both plugins put a negative line item on the registration, and both compute it

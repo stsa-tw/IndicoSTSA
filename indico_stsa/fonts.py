@@ -19,7 +19,9 @@ tofu the moment somebody's name is in Chinese.
 """
 
 import os
+from functools import lru_cache
 from importlib.resources import as_file, files
+from pathlib import Path
 
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -43,6 +45,20 @@ _registered = False
 
 def font_name(family):
     return f'{FONT_PREFIX}{family}'
+
+
+@lru_cache(maxsize=8)
+def cjk_font_path(family):
+    """Where Indico keeps the face backing this family.
+
+    `as_file` is a context manager because the resource could in principle live
+    inside a zip, in which case the path is only valid inside the `with`.  Indico
+    ships `indico_fonts` as a plain directory, so the path outlives it -- and
+    ReportLab and Pillow both need a real path they can open later, not a
+    handle that has already been closed.
+    """
+    with as_file(files('indico_fonts')) as font_dir:
+        return Path(font_dir) / FAMILIES[family]
 
 
 def register_fonts():

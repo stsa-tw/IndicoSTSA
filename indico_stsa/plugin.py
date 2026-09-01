@@ -23,6 +23,7 @@ from indico_stsa.emails import rewrite_subject
 from indico_stsa.fields import MemberDiscountField
 from indico_stsa.forms import STSASettingsForm
 from indico_stsa.handlers import (get_locked_field_reason, handle_registration_created, handle_registration_updated)
+from indico_stsa.emoji import draw_item_on_badge
 from indico_stsa.fonts import update_badge_style
 from indico_stsa.ticket_email import add_wallet_badges
 from indico_stsa.util import get_settings, is_group_login_required, is_group_plugin_installed
@@ -100,6 +101,7 @@ class STSAPlugin(IndicoPlugin):
         # Core computes each item's style and then asks whether anything wants
         # to change it, which is where the Chinese-capable font goes in.
         self.connect(signals.event.designer.update_badge_style, self._update_badge_style)
+        self.connect(signals.event.designer.draw_item_on_badge, self._draw_item_on_badge)
         self.connect(signals.plugin.cli, self._get_cli)
 
         # The wallet badges replace server-rendered markup, so the bundle has to
@@ -117,6 +119,21 @@ class STSAPlugin(IndicoPlugin):
 
     def get_blueprints(self):
         return blueprint
+
+    def _draw_item_on_badge(self, sender, data=None, **kwargs):
+        """Compose any line the badge fonts cannot draw, rather than boxing it.
+
+        Same setting as the fonts: turning the CJK faces off means core's own
+        font is in use, and second-guessing what it can draw is then our
+        business no longer.
+        """
+        try:
+            if not self.settings.get('cjk_badge_fonts'):
+                return None
+            return draw_item_on_badge(sender, data=data, **kwargs)
+        except Exception:
+            self.logger.exception('Could not compose an emoji item on a badge')
+            return None
 
     def _get_cli(self, sender, **kwargs):
         from indico_stsa.cli import cli

@@ -12,6 +12,8 @@ top-left.  A4 is 1050 wide; the ticket is 1210 tall, leaving the rest of the
 sheet blank to cut or fold away.
 """
 
+import re
+
 from indico_stsa import _
 
 
@@ -31,6 +33,12 @@ SERIF, SANS, MONO = 'serif', 'sans-serif', 'courier'
 #: The title Indico shows the template under, and how we find it again to
 #: refresh it rather than installing a second copy.
 TEMPLATE_TITLE = 'STSA 門票 / Ticket'
+
+
+def parse_font_size(value):
+    """'30pt' -> 30.  Core stores the size as a string with the unit on it."""
+    match = re.match(r'(\d+(?:\.\d+)?)', str(value))
+    return float(match.group(1)) if match else 14.0
 
 
 def _txt(x, y, w, type_, *, text='', size=14, font=SANS, color=INK, align='left'):

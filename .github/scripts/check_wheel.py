@@ -37,6 +37,9 @@ REQUIRED_FILES = [
     f'{PKG}/static/ticket/background.png',
     f'{PKG}/static/brand/logo-white.png',
     f'{PKG}/static/brand/emblem.png',
+    # Without this a ticket whose title has an emoji prints a crossed box.
+    f'{PKG}/static/fonts/NotoEmoji.ttf',
+    f'{PKG}/static/fonts/OFL.txt',
 ]
 
 # Filenames here carry a date or a content hash, so match on directory and
