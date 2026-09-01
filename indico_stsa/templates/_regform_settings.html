@@ -1,5 +1,7 @@
-{% macro render_settings_row(regform, group_plugin) %}
-    {% set settings = regform.stsa_settings %}
+{#- `settings` is passed in rather than read off the form here: the lookup has
+    to go through `indico_stsa.util.get_settings`, which is what keeps this row
+    working on an install whose tables were never created. -#}
+{% macro render_settings_row(regform, settings, group_plugin) %}
     <div class="i-box-header">
         <div class="i-box-title">{% trans %}STSA{% endtrans %}</div>
     </div>

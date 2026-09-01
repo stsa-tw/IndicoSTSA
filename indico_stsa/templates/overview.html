@@ -1,11 +1,15 @@
 {% extends 'events/management/base.html' %}
 {% from 'message_box.html' import message_box %}
+{% from 'stsa:_missing_tables.html' import missing_tables_box %}
 
 {% block title %}
     {% trans %}STSA{% endtrans %}
 {% endblock %}
 
 {% block content %}
+    {% if tables_missing %}
+        {{ missing_tables_box() }}
+    {% endif %}
     {% if not rows %}
         {% call message_box('info') %}
             {% trans %}This event has no registration forms yet.{% endtrans %}

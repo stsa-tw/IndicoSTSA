@@ -253,14 +253,37 @@ class STSAPlugin(IndicoPlugin):
                             section='organization', weight=-9)
 
     def _inject_regform_settings(self, regform, **kwargs):
-        """A row in the registration form's settings box."""
-        tpl = get_plugin_template_module('_regform_settings.html')
-        return tpl.render_settings_row(regform=regform, group_plugin=is_group_plugin_installed())
+        """A row in the registration form's settings box.
+
+        Rendering nothing is the failure mode: this hook sits in the middle of
+        a core page that has to keep working whatever state the plugin is in.
+        """
+        try:
+            tpl = get_plugin_template_module('_regform_settings.html')
+            return tpl.render_settings_row(regform=regform, settings=get_settings(regform),
+                                           group_plugin=is_group_plugin_installed())
+        except Exception:
+            self.logger.exception('Could not render the STSA registration form settings row')
+            return ''
 
     # -- the participant-facing form -----------------------------------------
 
     def _regform_container_attrs(self, event, regform, management, registration=None, **kwargs):
         """Hand the React side everything it needs, or nothing at all.
+
+        This one is on the participant's path: the registration form itself
+        renders through this hook, so a failure here would cost somebody a
+        registration.  No attribute means the React side finds no `data-stsa`
+        and leaves the form exactly as core rendered it.
+        """
+        try:
+            return self._build_regform_attrs(event, regform, management, registration)
+        except Exception:
+            self.logger.exception('Could not build the STSA registration form data')
+            return None
+
+    def _build_regform_attrs(self, event, regform, management, registration):
+        """The `data-stsa` attribute, or ``None`` when neither feature is on.
 
         Returning no attribute when neither feature is on keeps this plugin
         entirely invisible on the forms it is not configured for.

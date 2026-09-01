@@ -1,19 +1,73 @@
 """Lookups, provisioning, and the bridge to the group registration plugin."""
 
 from flask import has_request_context, session
+from sqlalchemy import inspect as sa_inspect
 
 from indico.core.db import db
+from indico.core.logger import Logger
 from indico.modules.events.registration.models.form_fields import RegistrationFormField
 from indico.modules.events.registration.models.items import RegistrationFormSection
 
 from indico_stsa.constants import (GROUP_MODES_WITH_GROUP, GROUP_PLAN_FIELD, GROUP_PLUGIN, MEMBER_DISCOUNT_FIELD,
                                   MEMBER_DISCOUNT_FIELD_TITLE, MEMBER_DISCOUNT_SECTION_TITLE)
+from indico_stsa.models import SCHEMA
+from indico_stsa.models.settings import STSASettings
+
+
+logger = Logger.get('plugin.stsa')
 
 
 # -- settings ----------------------------------------------------------------
+#
+# Every read of the plugin's own table goes through `tables_exist` first.
+# `indico db --plugin stsa upgrade` is a step an operator has to remember on
+# every install, and this lookup is on the *participant's* path as well as the
+# organizer's, so forgetting it used to turn the registration form -- and the
+# event management area -- into a 500.  A missing table now reads as "nothing
+# is configured", which is exactly what the plugin looks like before anybody
+# switches a feature on.
+
+#: Whether the tables were found.  Only a positive result is remembered: an
+#: operator who runs the migration on a live instance should not have to
+#: restart every worker before being believed.
+_tables_exist = False
+#: So that a broken install says so once per process rather than once per page.
+_warned_about_tables = False
+
+
+def tables_exist():
+    """Whether the plugin's own tables have been created in this database.
+
+    ``False`` means `indico db --plugin stsa upgrade` has not been run (or was
+    run against a different database).  Asked of the inspector rather than
+    learnt by letting a query fail: in PostgreSQL a failed statement aborts the
+    whole surrounding transaction, so catching the error after the fact would
+    take the rest of the request down with it -- including, on the registration
+    path, work that has nothing to do with this plugin.
+    """
+    global _tables_exist, _warned_about_tables
+    if _tables_exist:
+        return True
+    try:
+        _tables_exist = sa_inspect(db.engine).has_table(STSASettings.__tablename__, schema=SCHEMA)
+    except Exception:
+        # No database to ask, which every other query is about to discover too.
+        logger.exception('Could not check whether the STSA tables exist')
+        return False
+    if not _tables_exist and not _warned_about_tables:
+        _warned_about_tables = True
+        logger.warning('The STSA plugin has no tables in this database, so every per-form feature is off. '
+                       'Run `indico db --plugin stsa upgrade` and restart Indico.')
+    return _tables_exist
+
 
 def get_settings(regform):
-    """The plugin's configuration for a registration form, or ``None``."""
+    """The plugin's configuration for a registration form, or ``None``.
+
+    ``None`` also when the tables are missing -- see `tables_exist`.
+    """
+    if not tables_exist():
+        return None
     return regform.stsa_settings
 
 

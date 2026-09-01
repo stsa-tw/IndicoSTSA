@@ -1,0 +1,21 @@
+{% from 'message_box.html' import message_box %}
+
+{#- Shown wherever an organizer would otherwise be looking at settings that
+    cannot be read or saved, because `indico db --plugin stsa upgrade` has
+    never been run against this database.  The plugin degrades to "nothing is
+    configured" rather than failing, so without this box the pages would look
+    merely empty and the real cause would only be in the server log. -#}
+{% macro missing_tables_box() %}
+    {% call message_box('error') %}
+        <p>
+            {%- trans -%}
+                The STSA plugin has no tables in this database, so nothing here can be read or saved and every
+                feature it adds to a registration form is off.
+            {%- endtrans %}
+        </p>
+        <p>
+            {%- trans %}Run this on the server, then restart Indico:{% endtrans %}
+            <code>indico db --plugin stsa upgrade</code>
+        </p>
+    {% endcall %}
+{% endmacro %}

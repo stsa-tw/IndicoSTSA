@@ -20,7 +20,8 @@ from indico_stsa.discount import format_rate
 from indico_stsa.forms import RegFormSettingsForm
 from indico_stsa.models.settings import STSASettings
 from indico_stsa.pricing import apply_member_discount, is_member_discounted
-from indico_stsa.util import get_discount_data, get_settings, is_group_plugin_installed, provision_discount_field
+from indico_stsa.util import (get_discount_data, get_settings, is_group_plugin_installed, provision_discount_field,
+                              tables_exist)
 
 
 class WPSTSA(WPJinjaMixinPlugin, WPManageRegistration):
@@ -58,7 +59,8 @@ class RHSTSAOverview(RHManageRegFormsBase):
                          if settings else ''),
             })
         return WPSTSA.render_template('stsa:overview.html', self.event, rows=rows,
-                                      group_plugin=is_group_plugin_installed())
+                                      group_plugin=is_group_plugin_installed(),
+                                      tables_missing=not tables_exist())
 
 
 class RHSTSARegFormBase(RHManageRegFormBase):
@@ -73,8 +75,16 @@ class RHSTSASettings(RHSTSARegFormBase):
     """Configure the member discount and the group login gate."""
 
     def _process(self):
-        settings = self.settings
         group_plugin = is_group_plugin_installed()
+        if not tables_exist():
+            # There is nothing to read and nowhere to write: saving would fail
+            # on the INSERT, and a form that quietly does not save is worse
+            # than no form.  The page says what is missing instead.
+            return WPSTSA.render_template('stsa:settings.html', self.event, regform=self.regform, form=None,
+                                          settings=None, group_plugin=group_plugin, discounted=0,
+                                          tables_missing=True)
+
+        settings = self.settings
         defaults = FormDefaults(
             member_discount_enabled=settings.member_discount_enabled if settings else False,
             discount_type=settings.discount_type if settings else PERCENT,
@@ -110,7 +120,7 @@ class RHSTSASettings(RHSTSARegFormBase):
 
         return WPSTSA.render_template('stsa:settings.html', self.event, regform=self.regform, form=form,
                                       settings=settings, group_plugin=group_plugin,
-                                      discounted=_count_discounted(self.regform))
+                                      discounted=_count_discounted(self.regform), tables_missing=False)
 
 
 class RHRecalculateDiscounts(RHSTSARegFormBase):
@@ -124,6 +134,14 @@ class RHRecalculateDiscounts(RHSTSARegFormBase):
     """
 
     def _process(self):
+        if not tables_exist():
+            # Without the settings there is nothing to reprice *to*, and going
+            # ahead would strip the discount off every registration that has
+            # one.
+            flash(_('STSA has no tables in this database, so there are no settings to apply. Run '
+                    '`indico db --plugin stsa upgrade` on the server and restart Indico.'), 'error')
+            return jsonify_data()
+
         registrations = (Registration.query
                          .with_parent(self.regform)
                          .filter(~Registration.is_deleted)

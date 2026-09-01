@@ -44,6 +44,13 @@ indico db --plugin stsa upgrade
 
 Restart Indico (and the Celery worker, if you run one).
 
+Missing that last step does not take anything down. Without its tables the
+plugin reads as *nothing configured*: the member discount and the group gate
+are off, registration forms and e-mails behave exactly as they would with the
+plugin uninstalled, and the STSA pages in the management area say what is
+missing and print the command above instead of failing. The same line goes to
+the server log once per process.
+
 Released wheels carry the compiled webpack bundle. Installing straight from a
 git checkout does not — see [Building the assets](#building-the-assets).
 

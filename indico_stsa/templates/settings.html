@@ -1,6 +1,7 @@
 {% extends 'events/management/base.html' %}
 {% from 'forms/_form.html' import form_header, form_footer, form_rows %}
 {% from 'message_box.html' import message_box %}
+{% from 'stsa:_missing_tables.html' import missing_tables_box %}
 
 {% block title %}
     {% trans %}STSA{% endtrans %}
@@ -11,64 +12,68 @@
 {% endblock %}
 
 {% block content %}
-    {% call message_box('info') %}
-        {% trans -%}
-            An STSA membership is an account on this site, so a member is anyone signed in. Participants who
-            register while signed in get the discount automatically, as a named line on their invoice. Participants
-            who are not signed in are shown what the discount is worth and offered a button that brings them back
-            here with everything they have already typed still in place.
-        {%- endtrans %}
-        {% if regform.require_user %}
-            <br>
+    {% if tables_missing %}
+        {{ missing_tables_box() }}
+    {% else %}
+        {% call message_box('info') %}
             {% trans -%}
-                This form already requires an account to register, so every registration on it is a member's.
+                An STSA membership is an account on this site, so a member is anyone signed in. Participants who
+                register while signed in get the discount automatically, as a named line on their invoice. Participants
+                who are not signed in are shown what the discount is worth and offered a button that brings them back
+                here with everything they have already typed still in place.
             {%- endtrans %}
-        {% endif %}
-    {% endcall %}
-
-    {% if not group_plugin %}
-        {% call message_box('warning') %}
-            {% trans -%}
-                The group registration plugin is not installed, so there is no group registration to restrict here.
-            {%- endtrans %}
-        {% endcall %}
-    {% endif %}
-
-    {{ form_header(form, action=url_for_plugin('stsa.manage_settings', regform)) }}
-    {{ form_rows(form) }}
-    {% call form_footer(form) %}
-        <input class="i-button big highlight" type="submit" value="{% trans %}Save{% endtrans %}">
-    {% endcall %}
-
-    <div class="i-box">
-        <div class="i-box-header">
-            <div class="i-box-title">{% trans %}Existing registrations{% endtrans %}</div>
-        </div>
-        <div class="i-box-content">
-            <p>
-                {% trans count=discounted -%}
-                    {{ count }} registration on this form currently carries the member discount.
-                {%- pluralize -%}
-                    {{ count }} registrations on this form currently carry the member discount.
-                {%- endtrans %}
-            </p>
-            <p class="text-not-important">
+            {% if regform.require_user %}
+                <br>
                 {% trans -%}
-                    Saving the settings above only affects registrations made from now on. Recalculating applies the
-                    current settings to every registration that is linked to a membership account -- including ones
-                    made before the discount existed, and ones made without anybody signing in. Somebody whose price
-                    goes up after they have paid will owe the difference.
+                    This form already requires an account to register, so every registration on it is a member's.
                 {%- endtrans %}
-            </p>
-            <div class="toolbar f-j-end">
-                <button class="i-button icon-loop"
-                        data-href="{{ url_for_plugin('stsa.recalculate', regform) }}"
-                        data-method="POST"
-                        data-reload-after
-                        data-confirm="{% trans %}Reprice every registration linked to a membership account with the current settings?{% endtrans %}">
-                    {% trans %}Apply to existing registrations{% endtrans %}
-                </button>
+            {% endif %}
+        {% endcall %}
+
+        {% if not group_plugin %}
+            {% call message_box('warning') %}
+                {% trans -%}
+                    The group registration plugin is not installed, so there is no group registration to restrict here.
+                {%- endtrans %}
+            {% endcall %}
+        {% endif %}
+
+        {{ form_header(form, action=url_for_plugin('stsa.manage_settings', regform)) }}
+        {{ form_rows(form) }}
+        {% call form_footer(form) %}
+            <input class="i-button big highlight" type="submit" value="{% trans %}Save{% endtrans %}">
+        {% endcall %}
+
+        <div class="i-box">
+            <div class="i-box-header">
+                <div class="i-box-title">{% trans %}Existing registrations{% endtrans %}</div>
+            </div>
+            <div class="i-box-content">
+                <p>
+                    {% trans count=discounted -%}
+                        {{ count }} registration on this form currently carries the member discount.
+                    {%- pluralize -%}
+                        {{ count }} registrations on this form currently carry the member discount.
+                    {%- endtrans %}
+                </p>
+                <p class="text-not-important">
+                    {% trans -%}
+                        Saving the settings above only affects registrations made from now on. Recalculating applies the
+                        current settings to every registration that is linked to a membership account -- including ones
+                        made before the discount existed, and ones made without anybody signing in. Somebody whose price
+                        goes up after they have paid will owe the difference.
+                    {%- endtrans %}
+                </p>
+                <div class="toolbar f-j-end">
+                    <button class="i-button icon-loop"
+                            data-href="{{ url_for_plugin('stsa.recalculate', regform) }}"
+                            data-method="POST"
+                            data-reload-after
+                            data-confirm="{% trans %}Reprice every registration linked to a membership account with the current settings?{% endtrans %}">
+                        {% trans %}Apply to existing registrations{% endtrans %}
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
+    {% endif %}
 {% endblock %}
