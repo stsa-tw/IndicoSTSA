@@ -15,7 +15,9 @@ Three things, all optional and all off until somebody switches them on:
    signed-in members.
 4. **The standard wallet buttons.** Indico's "Add to Wallet" dropdown is
    replaced with Apple's and Google's own badges, on the registration page and
-   in the e-mail the ticket arrives with.
+   in the e-mail the ticket arrives with — and they work without signing in.
+5. **An STSA ticket**, in the association's own colours and marks, with a font
+   that can actually draw Chinese.
 
 A **member** is anyone signed in. An STSA membership *is* an account on the
 site: there is no membership table and no separate sign-up, so "becoming a
@@ -214,8 +216,16 @@ artwork, and Apple names dimming and animation specifically.
 
 A small script rewrites the finished page: it finds the links pointing at
 Indico's two wallet endpoints, puts a badge for each in a row below the action
-box, and removes the dropdown once nothing is left in it. The badge keeps the
-href core gave the link, so it grants exactly the access core intended.
+box, and removes the dropdown once nothing is left in it.
+
+The badge keeps the href core gave the link and adds the registration token the
+page was opened with. That is a fix, not a liberty: core links these two
+endpoints inconsistently. Where only one wallet is configured it uses the
+registrant locator, which carries the token — but in the dropdown, the branch
+you get when *both* are configured, it links the registration form with no token
+at all. Anyone who registered without an account was bounced to a login page
+they have no account for and could not add their pass. The badge grants exactly
+the access the page it sits on already grants, and nothing more.
 
 The alternative was forking `registration_summary.html`, a 300-line core
 template that changes between Indico releases and would then have to be reviewed
@@ -245,6 +255,69 @@ The mail is already rendered by the time the plugin sees it, so the block is
 spliced in just above the card's grey footer. If a future Indico changes that
 footer the badges land after the card instead — untidy, but still a working
 button.
+
+## 5. The ticket
+
+`indico stsa install-ticket` installs 「門票」, a tear-off stub, and makes it the
+default ticket for the root category — so every event uses it unless an
+organizer picks something else.
+
+```
+ ┌──────────────────────────────────────────┐
+ │ ▓▓ STSA wordmark            ADMIT ONE    │  navy field, #2F5478
+ ├──────────────────────────────────────────┤
+ │ 2026 STSA 秋季迎新晚會 Welcome Night      │  Noto Serif CJK
+ │                                          │
+ │ 持票人 ATTENDEE                          │
+ │ 昱辰 林                                   │  the holder is the hero
+ │ 日期時間 WHEN      地點 WHERE             │
+ │ - - - - - - - - - - - - - - - - - - - - -│  the tear line
+ │ ███████  入場憑證 ENTRY PASS              │
+ │ ███████  昱辰 林   NO. 4                  │  the stub names them again
+ │ (emblem)          Admits the named holder │
+ └══════════════════════════════════════════┘  oxblood rule, #8A2424
+```
+
+Re-running is how an upgrade is applied: the template is found by title and
+updated in place, so events already pointing at it keep pointing at it. It never
+runs by itself — a plugin that rewrote a template on every start would silently
+undo an organizer's edits. `--no-default` installs it without taking over, and
+`--dry-run` says what would change and rolls back.
+
+Once installed it is an ordinary designer template: organizers can open it and
+change it, and their edits survive until somebody re-runs the command.
+
+### Why the design is two layers
+
+Indico's designer canvas positions text and images and nothing else — there is
+no line or rectangle primitive. So every band, rule and the perforation arrives
+as one background PNG, built by `scripts/build-ticket-artwork.py` from the marks
+in `indico_stsa/static/brand/` (taken from
+[stsa-tw/Assets](https://github.com/stsa-tw/Assets)). The text and the QR sit on
+top. The two halves share a coordinate system: move a rule in the script, move
+the text in `indico_stsa/ticket.py`.
+
+The palette is sampled from the emblem itself — `#2F5478` from the merlion half,
+`#8A2424` from the bear — rather than picked to look nice next to it.
+
+### Chinese
+
+Indico offers badge fonts that cannot draw Chinese. The Liberation faces have no
+CJK glyphs and fall back to empty boxes; the two Kochi faces are Japanese; UMing
+is dated. Meanwhile Indico *ships* Noto Sans CJK and Noto Serif CJK and
+registers neither.
+
+So the plugin backs Indico's `serif`, `sans-serif` and `courier` families with
+those faces. Every template in the instance gets Chinese, not only this one, and
+a badge already set in `sans-serif` keeps working — it just stops producing tofu
+the moment a name is in Chinese. It costs nothing to ship, since the fonts are
+already there. Switch it off at **Administration → Plugins → STSA** if you would
+rather keep Liberation's metrics.
+
+Nothing on the ticket asks for bold. These are variable fonts and ReportLab
+renders their default instance, so a bold request would come out at regular
+weight; hierarchy is built from size, colour and the serif/sans contrast, which
+do arrive.
 
 ## Working with the group registration plugin
 

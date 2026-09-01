@@ -31,6 +31,43 @@ const WALLETS = [
 
 const BADGE_ROW_CLASS = 'stsa-wallet-badges';
 
+/**
+ * The registration token this page was opened with, if any.
+ *
+ * Core links the two wallet endpoints inconsistently.  Where only one wallet is
+ * configured it uses the registrant locator, which carries the token; but in
+ * the dropdown -- the branch you get when *both* are configured -- it links the
+ * registration form instead, with no token at all.  So somebody who registered
+ * without an account, following the link in their own confirmation e-mail, is
+ * bounced to a login page they have no account for, and cannot add their pass.
+ *
+ * The badge keeps whatever href core gave the link and adds the token this page
+ * was already opened with, so it grants exactly the access the page itself
+ * does, and nothing more.  A signed-in owner viewing their own registration has
+ * no token in the URL and needs none.
+ */
+function pageToken() {
+  const fromUrl = new URLSearchParams(window.location.search).get('token');
+  if (fromUrl) {
+    return fromUrl;
+  }
+  // Fall back to core's own ticket link, which always uses the registrant
+  // locator, in case the page was reached some other way.
+  const ticket = document.querySelector('a[href*="/ticket?"], a[href*="/ticket/download?"]');
+  return ticket ? new URLSearchParams(ticket.search).get('token') : null;
+}
+
+function withToken(href, token) {
+  if (!token) {
+    return href;
+  }
+  const url = new URL(href, window.location.origin);
+  if (!url.searchParams.has('token')) {
+    url.searchParams.set('token', token);
+  }
+  return url.toString();
+}
+
 function badgeFor(wallet, href, imageUrl) {
   const link = document.createElement('a');
   link.className = `stsa-wallet-badge stsa-wallet-badge--${wallet.key}`;
@@ -107,6 +144,7 @@ function artworkFor(key) {
 export default function setupWalletBadges() {
   const emptiedDropdowns = new Set();
   const links = [...document.querySelectorAll('a[href]')];
+  const token = pageToken();
 
   WALLETS.forEach(wallet => {
     const image = artworkFor(wallet.key);
@@ -126,7 +164,7 @@ export default function setupWalletBadges() {
       const item = link.closest('li');
       const dropdown = item && item.closest('.i-dropdown');
 
-      badgeRow(dropdown || link).appendChild(badgeFor(wallet, link.href, image));
+      badgeRow(dropdown || link).appendChild(badgeFor(wallet, withToken(link.href, token), image));
       (item || link).remove();
       if (dropdown) {
         emptiedDropdowns.add(dropdown);

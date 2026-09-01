@@ -4,7 +4,7 @@ build-backend = 'hatchling.build'
 
 [project]
 name = 'indico-plugin-stsa'
-description = 'STSA customizations for Indico: e-mail subject prefixes, a member discount, and the standard wallet buttons'
+description = 'STSA customizations for Indico: e-mail subject prefixes, a member discount, the standard wallet buttons, and an STSA ticket'
 readme = 'README.md'
 license = 'MIT'
 authors = [{ name = 'Singapore Taiwanese Student Association' }]

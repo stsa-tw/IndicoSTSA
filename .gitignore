@@ -28,3 +28,6 @@ url_map.json
 # `scripts/install-apple-badges.py`; it must never be committed or published.
 indico_stsa/static/wallet/apple/*.svg
 indico_stsa/static/wallet/apple/*.png
+
+# Rendered ticket previews, regenerated on demand
+preview/

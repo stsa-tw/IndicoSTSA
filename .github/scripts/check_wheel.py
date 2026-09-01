@@ -33,6 +33,10 @@ REQUIRED_FILES = [
     f'{PKG}/static/wallet/google/enGB.png',
     # The instructions for the artwork that is *not* here.
     f'{PKG}/static/wallet/apple/README.md',
+    # The ticket: its furniture layer and the marks it is built from.
+    f'{PKG}/static/ticket/background.png',
+    f'{PKG}/static/brand/logo-white.png',
+    f'{PKG}/static/brand/emblem.png',
 ]
 
 # Filenames here carry a date or a content hash, so match on directory and

@@ -29,6 +29,12 @@ class STSASettingsForm(IndicoForm):
         description=_('Replaces the "Add to Wallet" dropdown on the registration summary with the standard Apple '
                       'and Google badges. Only has an effect where an organizer has configured the passes.'))
 
+    cjk_badge_fonts = BooleanField(
+        _('Chinese-capable fonts on tickets and badges'), widget=SwitchWidget(),
+        description=_('Draws badge and ticket text in Noto Sans/Serif CJK, which Indico already ships but does '
+                      'not offer. Without it, Chinese names come out as empty boxes in every font except the '
+                      'two Japanese ones and UMing. Applies to every template in the instance.'))
+
     def validate_email_subject_prefix(self, field):
         if field.data and len(field.data) > 60:
             raise ValidationError(_('That prefix is too long for an e-mail subject.'))

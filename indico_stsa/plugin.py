@@ -23,6 +23,7 @@ from indico_stsa.emails import rewrite_subject
 from indico_stsa.fields import MemberDiscountField
 from indico_stsa.forms import STSASettingsForm
 from indico_stsa.handlers import (get_locked_field_reason, handle_registration_created, handle_registration_updated)
+from indico_stsa.fonts import update_badge_style
 from indico_stsa.ticket_email import add_wallet_badges
 from indico_stsa.util import get_settings, is_group_login_required, is_group_plugin_installed
 from indico_stsa.wallet import VENDORS, badge_url
@@ -45,7 +46,8 @@ class STSAPlugin(IndicoPlugin):
     registration can be restricted to signed-in members too.
 
     It also swaps Indico's "Add to Wallet" dropdown for the standard Apple and
-    Google wallet badges, which is what participants actually look for.
+    Google wallet badges, which is what participants actually look for, and
+    gives tickets and badges a Chinese-capable font and an STSA ticket design.
     """
 
     configurable = True
@@ -54,6 +56,7 @@ class STSAPlugin(IndicoPlugin):
         'rewrite_email_subjects': True,
         'email_subject_prefix': DEFAULT_SUBJECT_PREFIX,
         'wallet_badges': True,
+        'cjk_badge_fonts': True,
     }
 
     def init(self):
@@ -92,6 +95,13 @@ class STSAPlugin(IndicoPlugin):
         self.connect(signals.core.before_notification_send, self._before_notification_send,
                      sender='notify-registration')
 
+        # -- printed tickets and badges --------------------------------------
+        #
+        # Core computes each item's style and then asks whether anything wants
+        # to change it, which is where the Chinese-capable font goes in.
+        self.connect(signals.event.designer.update_badge_style, self._update_badge_style)
+        self.connect(signals.plugin.cli, self._get_cli)
+
         # The wallet badges replace server-rendered markup, so the bundle has to
         # reach the pages that carry it as well as the registration form: the
         # "Get ticket" dropdown also appears on a conference home page and in a
@@ -107,6 +117,25 @@ class STSAPlugin(IndicoPlugin):
 
     def get_blueprints(self):
         return blueprint
+
+    def _get_cli(self, sender, **kwargs):
+        from indico_stsa.cli import cli
+        return cli
+
+    def _update_badge_style(self, sender, item=None, styles=None, **kwargs):
+        """Draw badge text in a font that has Chinese in it.
+
+        Off is a real option: it changes the face on *every* template in the
+        instance, and an organizer who has tuned a badge to Liberation's
+        metrics should be able to keep it.
+        """
+        try:
+            if not self.settings.get('cjk_badge_fonts'):
+                return None
+            return update_badge_style(sender, item=item, styles=styles, **kwargs)
+        except Exception:
+            self.logger.exception('Could not apply the CJK badge font')
+            return None
 
     # -- wallet badges -------------------------------------------------------
 
