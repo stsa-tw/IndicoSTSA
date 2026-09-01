@@ -111,6 +111,24 @@ Somebody who **is signed in** sees nothing extra. The discount appears as a
 named *Member discount* line on their invoice, their registration summary and
 their confirmation e-mail, with the rate next to it.
 
+### The invoice line, and why organizers never see it
+
+The discount is stored as a value on a billable registration field the plugin
+provisions for itself — `ext__stsa_member_discount`, in a manager-only section
+called *Member discount (internal)*. That is what makes it a named **Member
+discount** line with a rate next to it rather than Indico's unlabelled "Price
+adjustment", and the plugin is its only writer: the field is locked, so core
+skips it when a registration is created or modified.
+
+None of it is an organizer's business, so the field and its section are hidden
+wherever a manager sees the form — the form editor and the management
+registration form alike. The field is registered with core's React field
+registry precisely so that it *can* be hidden: an input type no plugin has
+registered renders as `Unknown input type: ext__stsa_member_discount`, which is
+how organizers used to meet it. It is kept out of the **Add field** dropdown for
+the same reason — the plugin provisions the field itself, and a second copy
+would be a second invoice line that nothing ever writes to.
+
 ### Keeping the answers
 
 The answers go into `sessionStorage` when the page is navigated away from

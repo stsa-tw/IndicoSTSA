@@ -87,6 +87,12 @@ One webpack bundle (`webpack-bundles.json` → `client/js/index.jsx`), injected 
 matches subclasses, so adding a regform view under one of those bases would run the wallet
 enhancement twice.
 
+The member discount field is registered with core's field registry
+(`registerPluginObject('stsa', 'regformCustomFields', …)`) so that it can be *hidden*: an
+unregistered input type renders as `Unknown input type: …` wherever a manager sees the form. The
+component renders only a marker, and `styles/main.scss` hides the whole `.regform-section` that
+contains it — the section is the plugin's own, so nothing else is in it.
+
 All server→React data travels as a single `data-stsa` JSON attribute on the regform root, produced by
 the `regform-container-attrs` hook and read straight off the DOM in [config.js](indico_stsa/client/js/config.js)
 (never via core's redux selectors, which are not plugin API). React pieces register through
