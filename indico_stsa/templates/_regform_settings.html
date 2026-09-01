@@ -1,0 +1,23 @@
+{% macro render_settings_row(regform, group_plugin) %}
+    {% set settings = regform.stsa_settings %}
+    <div class="i-box-header">
+        <div class="i-box-title">{% trans %}STSA{% endtrans %}</div>
+    </div>
+    <div class="i-box-content">
+        <p>
+            {% if settings and settings.member_discount_enabled %}
+                {% trans %}Participants who register while signed in get the STSA member discount.{% endtrans %}
+            {% else %}
+                {% trans %}The member discount is switched off on this form.{% endtrans %}
+            {% endif %}
+            {% if group_plugin and settings and settings.group_login_required %}
+                {% trans %}Group registration is restricted to signed-in STSA members.{% endtrans %}
+            {% endif %}
+        </p>
+        <div class="toolbar f-j-end">
+            <a class="i-button icon-settings" href="{{ url_for_plugin('stsa.manage_settings', regform) }}">
+                {% trans %}Configure STSA settings{% endtrans %}
+            </a>
+        </div>
+    </div>
+{% endmacro %}

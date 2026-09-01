@@ -1,0 +1,46 @@
+// The Apple and Google wallet badges.
+//
+// These replace server-rendered markup rather than living inside the React
+// registration form, so they are plain global styles rather than a CSS module.
+
+.stsa-wallet-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  // Google asks for at least 8dp of clear space on every side of its button.
+  gap: 12px;
+  // The badges follow the box they came out of, so they need their own
+  // breathing room rather than sitting flush against it.
+  margin: 12px 0 16px;
+}
+
+.stsa-wallet-badge {
+  display: inline-flex;
+  // Never let the toolbar squeeze a badge: both vendors require the artwork to
+  // keep its proportions.
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  line-height: 0;
+  // The artwork carries its own corner radius; this is only here so the focus
+  // ring follows the shape rather than boxing it.
+  border-radius: 24px;
+
+  img {
+    // Google requires a minimum height of 48dp for its button, and asks that it
+    // be no smaller than the other buttons on the page.  Apple's badge is
+    // rendered at the same height so the two sit level.
+    height: 48px;
+    width: auto;
+    display: block;
+  }
+
+  // Deliberately no hover or press effect.  Both vendors forbid altering their
+  // artwork, and Apple's guidelines name dimming and animation specifically.
+  // The focus ring is the exception: it is outside the badge, and a keyboard
+  // user has to be able to see where they are.
+  &:focus-visible {
+    outline: 2px solid #0075a3;
+    outline-offset: 3px;
+  }
+}

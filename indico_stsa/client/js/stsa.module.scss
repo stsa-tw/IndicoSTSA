@@ -1,0 +1,39 @@
+// The notice above the registration form.  Semantic's `Message` brings its own
+// box; this only places it.
+.notice {
+  margin-bottom: 1.5em;
+}
+
+// The gate under the group registration plugin's plan picker.  It sits inside
+// that plugin's form item, so it keeps its distance from the picker above it
+// rather than from the form item's own padding.
+.gate {
+  margin-top: 1em;
+}
+
+// The call to action.  It is the point of both boxes, so it gets a line of its
+// own rather than being a word in a sentence, and the reassurance about the
+// half-filled form sits beside it where somebody hesitating will read it.
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5em 1em;
+  margin-top: 1.2em;
+}
+
+.sign-in {
+  // Semantic sizes `large` relative to the font size it inherits, and inside a
+  // message that is already small; this is what makes the button read as the
+  // main thing in the box rather than as another line of text.
+  font-size: 1.05rem !important;
+  padding-top: 0.9em !important;
+  padding-bottom: 0.9em !important;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 20%);
+}
+
+.hint {
+  flex: 1 1 14em;
+  font-size: 0.9em;
+  opacity: 0.85;
+}

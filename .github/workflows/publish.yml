@@ -1,0 +1,100 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to publish
+        required: true
+        default: testpypi
+        type: choice
+        options: [testpypi, pypi]
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-version:
+    name: Check the tag matches the package version
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check the tag matches the package version
+        run: |
+          python - <<'PY'
+          import os, pathlib, re, sys
+          source = pathlib.Path('indico_stsa/__init__.py').read_text(encoding='utf-8')
+          version = re.search(r"^__version__ = '([^']+)'", source, re.M).group(1)
+          tag = os.environ['TAG'].removeprefix('v')
+          if tag != version:
+              sys.exit(f'tag {tag!r} does not match __version__ {version!r}')
+          print(f'publishing version {version}')
+          PY
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+
+  # Builds the webpack bundle against an Indico source checkout and packs it
+  # into the wheel, then blocks the release if anything the plugin needs at
+  # runtime -- assets, templates, migrations -- did not make it in.
+  build:
+    name: Build
+    needs: check-version
+    # `needs` on a job that is skipped for workflow_dispatch would skip this one
+    # too, so only an actual failure may stop it.
+    if: ${{ !cancelled() && !failure() }}
+    uses: ./.github/workflows/build.yml
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/indico-plugin-stsa
+    permissions:
+      # Trusted publishing (OIDC). No API token is stored anywhere; PyPI
+      # verifies this workflow's identity instead.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # TestPyPI gets re-run while iterating, and a version that is already
+          # there is not a failure worth stopping for.
+          skip-existing: true
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/indico-plugin-stsa
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Deliberately no `skip-existing` here: a PyPI upload cannot be undone or
+      # replaced, so an attempt to publish a version that already exists is a
+      # mistake that should fail loudly rather than pass quietly.
+      - uses: pypa/gh-action-pypi-publish@release/v1

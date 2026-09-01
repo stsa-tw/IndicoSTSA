@@ -1,0 +1,251 @@
+"""The plugin class: everything this plugin hooks into, in one place."""
+
+import json
+
+from flask import request, session
+from markupsafe import escape
+
+from indico.core import signals
+from indico.core.notifications import make_email
+from indico.core.plugins import IndicoPlugin, get_plugin_template_module, url_for_plugin
+from indico.modules.auth.util import url_for_login
+from indico.modules.events.registration.fields.base import RegistrationFormFieldBase
+from indico.modules.events.registration.views import WPManageRegistration
+from indico.modules.events.views import WPConferenceDisplayBase, WPSimpleEventDisplayBase
+from indico.util.i18n import _
+from indico.util.signals import interceptable_sender
+from indico.web.menu import SideMenuItem
+
+from indico_stsa.blueprint import blueprint
+from indico_stsa.constants import DEFAULT_SUBJECT_PREFIX
+from indico_stsa.discount import format_rate
+from indico_stsa.emails import rewrite_subject
+from indico_stsa.fields import MemberDiscountField
+from indico_stsa.forms import STSASettingsForm
+from indico_stsa.handlers import (get_locked_field_reason, handle_registration_created, handle_registration_updated)
+from indico_stsa.ticket_email import add_wallet_badges
+from indico_stsa.util import get_settings, is_group_login_required, is_group_plugin_installed
+from indico_stsa.wallet import VENDORS, badge_url
+
+
+class STSAPlugin(IndicoPlugin):
+    """STSA
+
+    Customizations for the Singapore Taiwanese Student Association.
+
+    Replaces the "[Indico]" prefix on outgoing e-mail with STSA's own, and adds
+    a member discount that organizers can switch on per registration form:
+    money off for anyone who registers while signed in with their STSA
+    membership. Participants who are not signed in are told what the discount
+    is worth and offered a button that brings them back to the form with
+    everything they had already typed still in place.
+
+    An STSA membership is an account on this site, so a member is anyone signed
+    in. Where the group registration plugin is also installed, group
+    registration can be restricted to signed-in members too.
+
+    It also swaps Indico's "Add to Wallet" dropdown for the standard Apple and
+    Google wallet badges, which is what participants actually look for.
+    """
+
+    configurable = True
+    settings_form = STSASettingsForm
+    default_settings = {
+        'rewrite_email_subjects': True,
+        'email_subject_prefix': DEFAULT_SUBJECT_PREFIX,
+        'wallet_badges': True,
+    }
+
+    def init(self):
+        super().init()
+
+        # -- e-mail subject prefixes ----------------------------------------
+        #
+        # `make_email` is the one function every outgoing mail is built by, and
+        # it is decorated with `@make_interceptable` precisely so a plugin can
+        # step in.  See `indico_stsa.emails` for why this rather than a
+        # template override.
+        self.connect(signals.plugin.interceptable_function, self._intercept_make_email,
+                     sender=interceptable_sender(make_email))
+
+        # -- the member discount --------------------------------------------
+        #
+        # `get_fields` is connected via the base class, which is how core
+        # discovers every registration field implementation.
+        self.connect(signals.core.get_fields, self._get_fields, sender=RegistrationFormFieldBase)
+        self.connect(signals.event.registration_created, self._registration_created)
+        self.connect(signals.event.registration_updated, self._registration_updated)
+        self.connect(signals.event.is_field_data_locked, self._is_field_data_locked)
+
+        # -- management UI ---------------------------------------------------
+        self.connect(signals.menu.items, self._sidemenu_items, sender='event-management-sidemenu')
+        self.template_hook('extra-regform-settings', self._inject_regform_settings)
+
+        # -- the participant-facing form -------------------------------------
+        #
+        # Everything the React side needs travels as one `data-stsa` attribute
+        # on the regform root; unknown `data-*` there land in `extraData`,
+        # which is the sanctioned way to feed a plugin's own data into the
+        # registration form.
+        self.template_hook('regform-container-attrs', self._regform_container_attrs, markup=False)
+        self.template_hook('html-head', self._wallet_head_meta)
+        self.connect(signals.core.before_notification_send, self._before_notification_send,
+                     sender='notify-registration')
+
+        # The wallet badges replace server-rendered markup, so the bundle has to
+        # reach the pages that carry it as well as the registration form: the
+        # "Get ticket" dropdown also appears on a conference home page and in a
+        # meeting's header.
+        #
+        # Only the two display *bases* are listed, not the regform views under
+        # them.  `inject_bundle` matches subclasses, so naming both a base and
+        # its subclass puts the bundle in the page twice, and the second copy
+        # runs the wallet enhancement over the badges the first one made.
+        for view_class in (WPConferenceDisplayBase, WPSimpleEventDisplayBase, WPManageRegistration):
+            self.inject_bundle('main.js', view_class)
+            self.inject_bundle('main.css', view_class)
+
+    def get_blueprints(self):
+        return blueprint
+
+    # -- wallet badges -------------------------------------------------------
+
+    def _wallet_head_meta(self, **kwargs):
+        """Tell the page where the badge artwork is, or say nothing at all.
+
+        This goes in the document head rather than through `get_vars_js`, which
+        would look like the natural home for it.  `vars.js` is generated once
+        and written to a cache file keyed on the Indico version, so a setting
+        changed in the admin area would not take effect until that file was
+        deleted -- a switch that appears to do nothing is worse than no switch.
+
+        The markup this replaces is rendered by templates the plugin does not
+        touch, on pages that are not the registration form, so there is no
+        `data-` attribute of ours to hang it off either.
+        """
+        try:
+            if not self.settings.get('wallet_badges'):
+                return ''
+        except Exception:
+            self.logger.exception('Could not read the wallet badge setting')
+            return ''
+        # One tag per vendor whose artwork is actually installed, in the
+        # visitor's language.  Apple's badge has to be downloaded by hand, so
+        # its tag is usually absent -- and a wallet with no tag simply keeps the
+        # button Indico rendered, which is what Apple's guidelines require of
+        # anybody who does not have their artwork.
+        tags = []
+        for vendor in VENDORS:
+            if url := badge_url(vendor):
+                tags.append(f'<meta name="stsa-wallet-{vendor}" content="{escape(url)}">')
+        return ''.join(tags)
+
+    def _before_notification_send(self, sender, email=None, registration=None, template_name=None,
+                                  to_managers=False, **kwargs):
+        """Put the badges into the mail the participant's ticket arrives with.
+
+        The mail is already rendered by the time this runs, so the badges are
+        spliced into it rather than templated -- see `indico_stsa.ticket_email`
+        for why that is the lesser evil.  A failure here must not stop the mail:
+        a ticket that arrives without a wallet button is a small loss, a
+        confirmation that never arrives is not.
+        """
+        try:
+            if not self.settings.get('wallet_badges'):
+                return
+            add_wallet_badges(email, registration, template_name, to_managers)
+        except Exception:
+            self.logger.exception('Could not add the wallet badges to a registration e-mail')
+
+    # -- e-mail --------------------------------------------------------------
+
+    def _intercept_make_email(self, sender, func=None, args=None, **kwargs):
+        """Build the mail as usual, then rewrite its subject prefix.
+
+        Returning a value here means the original function is not called, so we
+        call it ourselves -- which is exactly what this signal is for.
+
+        Every failure path ends with Indico building the mail as if this plugin
+        were not installed.  A subject prefix is cosmetic; a registration
+        confirmation that never went out is not.
+        """
+        try:
+            if not self.settings.get('rewrite_email_subjects'):
+                return None
+            prefix = self.settings.get('email_subject_prefix')
+        except Exception:
+            self.logger.exception('Could not read the e-mail subject prefix settings')
+            return None
+        args.apply_defaults()
+        email = func(*args.args, **args.kwargs)
+        try:
+            email['subject'] = rewrite_subject(email['subject'], prefix)
+        except Exception:
+            self.logger.exception('Could not rewrite the subject of %r', email.get('subject'))
+        return email
+
+    # -- registration --------------------------------------------------------
+
+    def _get_fields(self, sender, **kwargs):
+        yield MemberDiscountField
+
+    def _registration_created(self, registration, data=None, management=False, **kwargs):
+        handle_registration_created(registration, data, management=management)
+
+    def _registration_updated(self, registration, data=None, management=False, **kwargs):
+        handle_registration_updated(registration, data, management=management)
+
+    def _is_field_data_locked(self, sender, registration=None, **kwargs):
+        return get_locked_field_reason(sender, registration)
+
+    # -- management UI -------------------------------------------------------
+
+    def _sidemenu_items(self, sender, event, **kwargs):
+        if not event.can_manage(session.user, permission='registration'):
+            return
+        return SideMenuItem('stsa', _('STSA'), url_for_plugin('stsa.manage_overview', event),
+                            section='organization', weight=-9)
+
+    def _inject_regform_settings(self, regform, **kwargs):
+        """A row in the registration form's settings box."""
+        tpl = get_plugin_template_module('_regform_settings.html')
+        return tpl.render_settings_row(regform=regform, group_plugin=is_group_plugin_installed())
+
+    # -- the participant-facing form -----------------------------------------
+
+    def _regform_container_attrs(self, event, regform, management, registration=None, **kwargs):
+        """Hand the React side everything it needs, or nothing at all.
+
+        Returning no attribute when neither feature is on keeps this plugin
+        entirely invisible on the forms it is not configured for.
+        """
+        settings = get_settings(regform)
+        discount_on = settings is not None and settings.member_discount_enabled
+        group_gate_on = is_group_login_required(regform)
+        if not discount_on and not group_gate_on:
+            return None
+
+        anonymous = not management and session.user is None
+        config = {
+            # Whether the *visitor* is signed out.  Drives the notices, and
+            # decides whether a draft is worth saving.
+            'anonymous': anonymous,
+            # Whether a draft may be restored.  Deliberately independent of
+            # `anonymous`: the whole point is to restore it once the visitor
+            # has come back signed *in*.  Off in the management area, where
+            # nobody is being asked to sign in for anything.
+            'draft': not management,
+            'eventId': event.id,
+            'regformId': regform.id,
+            # Part of the draft's key, so that a draft of a *new* registration
+            # can never be restored over somebody editing an existing one.
+            'registrationId': registration.id if registration else None,
+            'loginUrl': url_for_login(request.relative_url) if anonymous else None,
+            'memberDiscount': discount_on,
+            'discountRate': (format_rate(settings.discount_type, settings.discount_value, regform.currency)
+                             if discount_on else ''),
+            'discountAppliesTo': settings.applies_to if discount_on else None,
+            'noticeText': (settings.notice_text or '') if discount_on else '',
+            'groupLoginRequired': group_gate_on,
+        }
+        return {'data-stsa': json.dumps(config)}

@@ -1,0 +1,8 @@
+# Keep the repository LF-only; the plugin is deployed on Linux and the
+# webpack build hashes file contents, so a CRLF round trip on a Windows
+# checkout would change every bundle name for no reason.
+* text=auto eol=lf
+
+# Artwork and compiled assets are binary and must never be touched.
+*.png binary
+*.svg -text

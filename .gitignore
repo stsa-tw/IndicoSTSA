@@ -1,0 +1,30 @@
+# Playwright MCP drops snapshots and downloads wherever it is run from.
+.playwright-mcp/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.mo
+
+# Plugin asset build artifacts
+node_modules/
+indico_stsa/static/dist/
+webpack-build-config.json
+url_map.json
+
+# Apple's badge artwork is licensed to the operator, not to this package: the
+# Wallet Marketing Agreement is non-transferable and covers only the licensee's
+# own passes.  Each deployment installs its own copy with
+# `scripts/install-apple-badges.py`; it must never be committed or published.
+indico_stsa/static/wallet/apple/*.svg
+indico_stsa/static/wallet/apple/*.png
