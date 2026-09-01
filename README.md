@@ -129,6 +129,11 @@ how organizers used to meet it. It is kept out of the **Add field** dropdown for
 the same reason — the plugin provisions the field itself, and a second copy
 would be a second invoice line that nothing ever writes to.
 
+The registration list's **Customize list** dialog offers every field on the form
+as a column, this one included, so it is filtered out of that dialog too. If
+somebody had already switched the column on, opening the dialog once and
+applying it puts that right.
+
 ### Keeping the answers
 
 The answers go into `sessionStorage` when the page is navigated away from

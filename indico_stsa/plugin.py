@@ -2,7 +2,7 @@
 
 import json
 
-from flask import request, session
+from flask import before_render_template, request, session
 from markupsafe import escape
 
 from indico.core import signals
@@ -25,6 +25,7 @@ from indico_stsa.forms import STSASettingsForm
 from indico_stsa.handlers import (get_locked_field_reason, handle_registration_created, handle_registration_updated)
 from indico_stsa.emoji import draw_item_on_badge
 from indico_stsa.fonts import update_badge_style
+from indico_stsa.reglist import REGLIST_FILTER_TEMPLATE, hide_internal_columns
 from indico_stsa.ticket_email import add_wallet_badges
 from indico_stsa.util import get_settings, is_group_login_required, is_group_plugin_installed
 from indico_stsa.wallet import VENDORS, badge_url
@@ -84,6 +85,12 @@ class STSAPlugin(IndicoPlugin):
         # -- management UI ---------------------------------------------------
         self.connect(signals.menu.items, self._sidemenu_items, sender='event-management-sidemenu')
         self.template_hook('extra-regform-settings', self._inject_regform_settings)
+
+        # The "Customize list" dialog builds its column list from the form
+        # itself and core has no hook for leaving a field out, so the internal
+        # member discount field is filtered out of the template's context
+        # instead.  See `indico_stsa.reglist` for why that is Flask's signal.
+        self.connect(before_render_template, self._before_render_template)
 
         # -- the participant-facing form -------------------------------------
         #
@@ -251,6 +258,21 @@ class STSAPlugin(IndicoPlugin):
             return
         return SideMenuItem('stsa', _('STSA'), url_for_plugin('stsa.manage_overview', event),
                             section='organization', weight=-9)
+
+    def _before_render_template(self, sender, template=None, context=None, **kwargs):
+        """Filter the registrant-list column dialog just before it renders.
+
+        This receiver sees *every* template in the instance, so it does as
+        little as possible before recognising its own, and it swallows whatever
+        goes wrong: a column an organizer should not have been offered is worth
+        far less than the page it is on.
+        """
+        if context is None or getattr(template, 'name', None) != REGLIST_FILTER_TEMPLATE:
+            return
+        try:
+            hide_internal_columns(context)
+        except Exception:
+            self.logger.exception('Could not filter the registration list column dialog')
 
     def _inject_regform_settings(self, regform, **kwargs):
         """A row in the registration form's settings box.

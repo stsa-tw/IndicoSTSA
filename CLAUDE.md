@@ -75,6 +75,14 @@ named invoice line. The field is **locked** via `is_field_data_locked`, which ma
 `calculate_price` only receives the stored value, so the amount must be computed and written *before*
 core prices anything.
 
+The field is internal, so it is hidden in every place core exposes a form's fields to an organizer:
+the form editor (client side, below), and the registrant list's *Customize list* dialog
+([reglist.py](indico_stsa/reglist.py)). That dialog walks `regform.sections` straight from
+`management/reglist_filter.html` and core offers no hook, so the fix is Flask's own
+`before_render_template`, filtering the template's context. **Not** a template customization path:
+those replace a core template wholesale, and the group registration plugin needs the same file
+changed for the same reason — the second one to register would silently lose.
+
 Membership test: `registration.user is not None and session.user == registration.user` — both halves
 are load-bearing (see `util.registration_is_member`). Registrations made from the management area
 are trusted instead. Once earned, the discount is only ever added on update, never removed
