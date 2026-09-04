@@ -66,6 +66,18 @@ def discount_for(discount_type, value, discountable):
     return -min(quantize(raw), quantize(discountable))
 
 
+def member_base_price(base_price, discount_type, discount_value):
+    """The registration fee as a member is quoted it, before any group plan.
+
+    Calculated from the fee alone whatever `applies_to` says.  A quote is read
+    before anything on the form has been filled in, so there are no paid
+    options to add to the basis yet -- which means a member who then picks one
+    pays a little less than the quote rather than a little more.
+    """
+    base_price = max(to_decimal(base_price), Decimal(0))
+    return quantize(base_price + discount_for(discount_type, discount_value, base_price))
+
+
 def format_rate(discount_type, value, currency):
     """The rate as a participant reads it: "20% off" or "5.00 SGD off"."""
     value = to_decimal(value)

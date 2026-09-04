@@ -9,14 +9,20 @@ data -- not the registration -- so the amount has to be computed here and
 written into the value beforehand.  Everything that renders the line does get
 the whole `RegistrationData`, which is how `indico_stsa.fields` can describe
 the discount as it stands right now.
+
+`will_be_discounted` and `preview_base_price` read the same decision forwards,
+for prices that have to be quoted before there is a registration to price --
+see `indico_stsa.group_preview`.
 """
 
 from decimal import Decimal
 
+from flask import has_request_context, session
+
 from indico.core.db import db
 
 from indico_stsa.constants import GROUP_DISCOUNT_FIELD, MEMBER_DISCOUNT_FIELD
-from indico_stsa.discount import discount_for, discountable_amount, quantize, to_decimal
+from indico_stsa.discount import discount_for, discountable_amount, member_base_price, quantize, to_decimal
 from indico_stsa.util import (find_field, get_discount_data, get_settings, registration_is_member,
                               reprice_group_of, set_discount_data)
 
@@ -64,6 +70,44 @@ def is_member_discounted(registration):
     """
     data = get_discount_data(registration)
     return bool(data and data.data and data.data.get('member'))
+
+
+def will_be_discounted(registration, *, management=False):
+    """Whether the discount is going to land on the registration being filled in.
+
+    This is the same decision `apply_member_discount` makes, read forwards: it
+    is what lets a price be quoted before there is anything to price.  A
+    registration that is being edited answers for itself; a new one answers for
+    whoever is filling it in, and being signed in is exactly what the notice
+    above the form promises is enough.
+    """
+    if registration is not None:
+        if is_member_discounted(registration):
+            return True
+        if registration.is_paid:
+            # `apply_member_discount(upgrade_only=True)` will not grant it now:
+            # there would be no way to give the difference back.
+            return False
+        return registration_is_member(registration, management=management)
+    # In the management area the fee belongs to somebody who is not in the
+    # room, and whether their address turns out to be an account's is not
+    # knowable from here.  The standard fee is the honest quote.
+    return not management and has_request_context() and session.user is not None
+
+
+def preview_base_price(regform, *, management=False, registration=None):
+    """The registration fee to quote to whoever is looking at the form.
+
+    ``None`` when the standard fee is already the right answer -- the discount
+    is off, or this visitor is not going to get it -- which is what keeps the
+    plugin invisible on every form it is not configured for.
+    """
+    settings = get_settings(regform)
+    if settings is None or not settings.member_discount_enabled:
+        return None
+    if not will_be_discounted(registration, management=management):
+        return None
+    return member_base_price(regform.base_price, settings.discount_type, settings.discount_value)
 
 
 def apply_member_discount(registration, *, management=False, upgrade_only=False):

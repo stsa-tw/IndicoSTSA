@@ -10,6 +10,7 @@ from indico.core.notifications import make_email
 from indico.core.plugins import IndicoPlugin, get_plugin_template_module, url_for_plugin
 from indico.modules.auth.util import url_for_login
 from indico.modules.events.registration.fields.base import RegistrationFormFieldBase
+from indico.modules.events.registration.util import get_flat_section_submission_data
 from indico.modules.events.registration.views import WPManageRegistration
 from indico.modules.events.views import WPConferenceDisplayBase, WPSimpleEventDisplayBase
 from indico.util.i18n import _
@@ -22,9 +23,11 @@ from indico_stsa.discount import format_rate
 from indico_stsa.emails import rewrite_subject
 from indico_stsa.fields import MemberDiscountField
 from indico_stsa.forms import STSASettingsForm
+from indico_stsa.group_preview import quote_member_price
 from indico_stsa.handlers import (get_locked_field_reason, handle_registration_created, handle_registration_updated)
 from indico_stsa.emoji import draw_item_on_badge
 from indico_stsa.fonts import update_badge_style
+from indico_stsa.pricing import preview_base_price
 from indico_stsa.reglist import REGLIST_FILTER_TEMPLATE, hide_internal_columns
 from indico_stsa.ticket_email import add_wallet_badges
 from indico_stsa.util import get_settings, is_group_login_required, is_group_plugin_installed
@@ -81,6 +84,15 @@ class STSAPlugin(IndicoPlugin):
         self.connect(signals.event.registration_created, self._registration_created)
         self.connect(signals.event.registration_updated, self._registration_updated)
         self.connect(signals.event.is_field_data_locked, self._is_field_data_locked)
+
+        # The group registration plugin's plan picker quotes a price per member
+        # from the form's standard fee, which knows nothing about the member
+        # discount.  `get_flat_section_submission_data` builds the field data
+        # the whole registration form is rendered from and is decorated with
+        # `@make_interceptable` so a plugin can step in -- see
+        # `indico_stsa.group_preview`.
+        self.connect(signals.plugin.interceptable_function, self._intercept_submission_data,
+                     sender=interceptable_sender(get_flat_section_submission_data))
 
         # -- management UI ---------------------------------------------------
         self.connect(signals.menu.items, self._sidemenu_items, sender='event-management-sidemenu')
@@ -250,6 +262,26 @@ class STSAPlugin(IndicoPlugin):
 
     def _is_field_data_locked(self, sender, registration=None, **kwargs):
         return get_locked_field_reason(sender, registration)
+
+    def _intercept_submission_data(self, sender, func=None, args=None, **kwargs):
+        """Quote the member price in the group plugin's plan picker.
+
+        Building the form data is the original function's job, so it is called
+        first and its result handed back whatever happens next: this is the
+        participant's own registration form, and a picker quoting the standard
+        fee is a far smaller thing to lose than the form itself.
+        """
+        args.apply_defaults()
+        form_data = func(*args.args, **args.kwargs)
+        try:
+            base_price = preview_base_price(args.arguments['regform'],
+                                            management=args.arguments['management'],
+                                            registration=args.arguments['registration'])
+            if base_price is not None:
+                quote_member_price(form_data, base_price)
+        except Exception:
+            self.logger.exception('Could not quote the member price in the group plan picker')
+        return form_data
 
     # -- management UI -------------------------------------------------------
 

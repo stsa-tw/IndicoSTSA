@@ -388,6 +388,47 @@ loop.
 Neither plugin can push a registration below zero: each clamps its own line to
 the amount it applies to, and Indico clamps the total at zero regardless.
 
+### The price the plan picker quotes
+
+The group plugin's plan picker puts a price against every plan — *Pair, 2
+members, 90.00 SGD each* — and shows the same kind of number again when somebody
+pastes a code to preview the group they are joining. Both are worked out in the
+browser from one number the server hands it: the form's standard registration
+fee. The member discount was not in that number, so a signed-in member was
+quoted the full price and then charged less than they had been shown.
+
+So the fee itself is re-quoted. `get_flat_section_submission_data` builds the
+field data the whole registration form is rendered from and is decorated with
+`@make_interceptable`, which is Indico's own invitation for a plugin to step in;
+the plugin calls it, and where the discount is going to land it writes the fee
+that member actually pays. Changing the fee rather than the plan list is what
+fixes both quotes at once — the join preview looks the group's plan up over
+AJAX, so a rewritten plan list would never reach it — and it keeps this side
+from having an opinion about what a group plan is worth, which is the group
+plugin's business.
+
+The picker carries **two** fees for exactly this, and only one of them is ours:
+`payerBasePrice`, what the person in front of it pays before a group plan, is
+written; `basePrice`, the standard fee, is left alone. That distinction is the
+whole of the arithmetic. The group plugin works a plan's own rate out from
+whichever of the two its *Discount applies to* setting names, exactly as it does
+on the server — so a percentage plan set against the fee does not start
+compounding with the member discount just because the picker is quoting a
+discounted price. Group registration **0.2.4** is where `payerBasePrice` starts
+to exist; against an older one the standard fee is written instead, and the
+quote carries the discount but comes out high by the plan's percentage of it.
+
+Whether the discount is going to land is the same decision `apply_member_discount`
+makes, read forwards: a registration being edited answers for itself, and a new
+one answers for whoever is filling it in, where being signed in is exactly what
+the notice above the form already promises is enough. In the management area the
+fee belongs to somebody who is not in the room, so the standard fee is quoted.
+
+What no quote can include is the paid options nobody has chosen yet, so a member
+who then adds one pays a little more than the number the picker showed. That is
+the picker's own long-standing approximation rather than anything to do with the
+discount, and the option's price is in front of whoever is choosing it.
+
 The plugin works perfectly well without the group registration plugin; the group
 switch simply disappears.
 

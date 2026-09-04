@@ -59,6 +59,7 @@ all the unit tests**, while their DB-touching counterparts are exercised only ag
 | --- | --- |
 | [discount.py](indico_stsa/discount.py) — *how much* | [pricing.py](indico_stsa/pricing.py) — *whether*, and writing it |
 | [emails.py](indico_stsa/emails.py) — subject rewriting | `plugin._intercept_make_email` |
+| [group_preview.py](indico_stsa/group_preview.py) — re-quoting the plan picker | `plugin._intercept_submission_data` |
 | [wallet.py](indico_stsa/wallet.py) — locale → artwork | [ticket_email.py](indico_stsa/ticket_email.py) |
 | [ticket.py](indico_stsa/ticket.py) — the design | [install_ticket.py](indico_stsa/install_ticket.py) |
 
@@ -87,6 +88,25 @@ Membership test: `registration.user is not None and session.user == registration
 are load-bearing (see `util.registration_is_member`). Registrations made from the management area
 are trusted instead. Once earned, the discount is only ever added on update, never removed
 (`upgrade_only=True`).
+
+### The plan picker's price
+
+The group plugin's picker prices each plan in the browser from one number,
+`basePrice` in its field data — the form's standard fee, which knows nothing
+about the member discount. `plugin._intercept_submission_data` intercepts
+`get_flat_section_submission_data` (core's `@make_interceptable`, same mechanism
+as the e-mail subjects) and `group_preview.quote_member_price` writes the fee the
+member actually pays; `pricing.preview_base_price` decides whether it lands at
+all, by reading `apply_member_discount`'s decision forwards. **The fee is
+rewritten, not the plan list** — the join preview fetches its plan over AJAX and
+prices it against the same fee, so only the fee reaches both.
+
+The picker has two fees and only `payerBasePrice` is ours to write: `basePrice`
+is what the group plugin works a plan's own rate out from when its *applies to*
+is the fee, so moving it would compound the two discounts, which the server
+never does. `payerBasePrice` needs group registration **0.2.4**; older versions
+have only `basePrice`, and `quote_member_price` falls back to it for a quote
+that is high rather than absent.
 
 ### Client side
 
