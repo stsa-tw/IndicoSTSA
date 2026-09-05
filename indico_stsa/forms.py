@@ -35,6 +35,12 @@ class STSASettingsForm(IndicoForm):
                       'not offer. Without it, Chinese names come out as empty boxes in every font except the '
                       'two Japanese ones and UMing. Applies to every template in the instance.'))
 
+    payment_reminders = BooleanField(
+        _('Payment reminders'), widget=SwitchWidget(),
+        description=_('Adds a "Remind unpaid" button to the registrant list that writes to everybody whose fee is '
+                      'still outstanding, and an {amount} placeholder to the registration e-mail dialogs. Switch it '
+                      'off if another plugin claims that placeholder name.'))
+
     def validate_email_subject_prefix(self, field):
         if field.data and len(field.data) > 60:
             raise ValidationError(_('That prefix is too long for an e-mail subject.'))

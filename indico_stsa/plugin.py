@@ -27,6 +27,7 @@ from indico_stsa.group_preview import quote_member_price
 from indico_stsa.handlers import (get_locked_field_reason, handle_registration_created, handle_registration_updated)
 from indico_stsa.emoji import draw_item_on_badge
 from indico_stsa.fonts import update_badge_style
+from indico_stsa.payments import OutstandingAmountPlaceholder, find_unpaid
 from indico_stsa.pricing import preview_base_price
 from indico_stsa.reglist import REGLIST_FILTER_TEMPLATE, hide_internal_columns
 from indico_stsa.ticket_email import add_wallet_badges
@@ -51,8 +52,10 @@ class STSAPlugin(IndicoPlugin):
     registration can be restricted to signed-in members too.
 
     It also swaps Indico's "Add to Wallet" dropdown for the standard Apple and
-    Google wallet badges, which is what participants actually look for, and
-    gives tickets and badges a Chinese-capable font and an STSA ticket design.
+    Google wallet badges, which is what participants actually look for, gives
+    tickets and badges a Chinese-capable font and an STSA ticket design, and
+    puts a one-click payment reminder for everybody who still owes money in the
+    registrant list.
     """
 
     configurable = True
@@ -62,6 +65,7 @@ class STSAPlugin(IndicoPlugin):
         'email_subject_prefix': DEFAULT_SUBJECT_PREFIX,
         'wallet_badges': True,
         'cjk_badge_fonts': True,
+        'payment_reminders': True,
     }
 
     def init(self):
@@ -103,6 +107,20 @@ class STSAPlugin(IndicoPlugin):
         # member discount field is filtered out of the template's context
         # instead.  See `indico_stsa.reglist` for why that is Flask's signal.
         self.connect(before_render_template, self._before_render_template)
+
+        # -- payment reminders -----------------------------------------------
+        #
+        # `registration-status-action-button` is core's own hook for an extra
+        # button in the registrant list toolbar, and nothing in core uses it,
+        # so there is no ordering to negotiate with anybody.  The *Actions*
+        # dropdown next to it was the obvious alternative and does not work:
+        # both the dropdown itself and every entry in it are rendered with the
+        # `disabled` class, which only `js-requires-selected-row` ever takes
+        # off again -- so an action that deliberately ignores the selection
+        # cannot be reached there at all.
+        self.template_hook('registration-status-action-button', self._reglist_action_button)
+        # `{amount}`, so the reminder can name the sum it is asking for.
+        self.connect(signals.core.get_placeholders, self._get_email_placeholders, sender='registration-email')
 
         # -- the participant-facing form -------------------------------------
         #
@@ -305,6 +323,59 @@ class STSAPlugin(IndicoPlugin):
             hide_internal_columns(context)
         except Exception:
             self.logger.exception('Could not filter the registration list column dialog')
+
+    def _reglist_action_button(self, regform, **kwargs):
+        """The "remind everybody who has not paid" button, or nothing at all.
+
+        Four things have to be true before it is worth showing, and none of
+        them is checked for us.  The hook sits *outside* the surrounding
+        `can_manage_registration` block in core's template, so the permission
+        is ours to check; an event with no payment feature has nowhere for
+        anybody to pay; and a button that opens a dialog saying "nobody owes
+        anything" is a button that should not have been drawn.
+
+        Rendering nothing is the failure mode, as everywhere else here: this
+        runs in the middle of the registrant list, which an organizer needs far
+        more than they need this button.
+        """
+        try:
+            if not self.settings.get('payment_reminders'):
+                return ''
+            event = regform.event
+            if not event.can_manage(session.user, permission='registration'):
+                return ''
+            if not event.has_feature('payment'):
+                return ''
+            if not (count := len(find_unpaid(regform))):
+                return ''
+            tpl = get_plugin_template_module('_reglist_button.html')
+            return tpl.render_reminder_button(regform=regform, count=count)
+        except Exception:
+            self.logger.exception('Could not render the STSA payment reminder button')
+            return ''
+
+    def _get_email_placeholders(self, sender, **kwargs):
+        """Offer `{amount}` to every registration e-mail, not just the reminder.
+
+        Placeholders are registered per context for the whole instance, so
+        there is no way to offer one only to our own dialog -- it turns up in
+        core's *E-mail* action too, which is no bad thing.
+
+        The setting is what makes that safe to live with: `{amount}` is a
+        short, obvious name, and two plugins claiming it would make
+        `named_objects_from_signal` raise on *every* registration e-mail rather
+        than only the ones using the placeholder.  Reading the setting is
+        guarded separately because the rest of this is a generator, whose body
+        does not run until the signal's result is iterated -- which is halfway
+        through building somebody's mail.
+        """
+        try:
+            enabled = self.settings.get('payment_reminders')
+        except Exception:
+            self.logger.exception('Could not read the payment reminder setting')
+            return
+        if enabled:
+            yield OutstandingAmountPlaceholder
 
     def _inject_regform_settings(self, regform, **kwargs):
         """A row in the registration form's settings box.

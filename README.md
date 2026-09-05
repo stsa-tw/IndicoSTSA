@@ -2,7 +2,7 @@
 
 Customizations for the Singapore Taiwanese Student Association.
 
-Three things, all optional and all off until somebody switches them on:
+Six things, each independently switchable:
 
 1. **E-mail subject prefixes.** Every mail Indico sends goes out with STSA's own
    prefix instead of `[Indico]`.
@@ -18,6 +18,9 @@ Three things, all optional and all off until somebody switches them on:
    in the e-mail the ticket arrives with — and they work without signing in.
 5. **An STSA ticket**, in the association's own colours and marks, with a font
    that can actually draw Chinese.
+6. **Payment reminders.** One button in the registrant list writes to everybody
+   whose registration fee is still outstanding, each mail naming what that
+   person owes.
 
 A **member** is anyone signed in. An STSA membership *is* an account on the
 site: there is no membership table and no separate sign-up, so "becoming a
@@ -371,6 +374,82 @@ and white, and colour emoji are bitmap fonts that ReportLab cannot embed at all.
 If the font is ever missing, or composing fails, the characters are dropped
 instead. A title reading 秋季迎新晚會 is a small loss; one reading 秋季迎新晚會 ⊠
 looks broken.
+
+## 6. Payment reminders
+
+The registrant list gets a **Remind unpaid (3)** button, next to *Moderation*
+and *Check-in control*. It writes to everybody on that registration form whose
+fee is still outstanding, in one click, without anybody having to filter the
+list and tick four hundred boxes first.
+
+The count is in the label rather than only in the dialog, so the button says
+what it is about to do before it is pressed — and it is not drawn at all when
+nobody owes anything, when the event takes no payments, or when the viewer only
+has moderation or check-in rights.
+
+### Who counts as unpaid
+
+Three things have to be true, and each one keeps somebody out of the list who
+would otherwise be chased for nothing:
+
+* the registration is in Indico's **Awaiting payment** state. That is the only
+  state that means a fee is outstanding: *complete* has either paid or was
+  never asked to, and *pending*, *rejected* and *withdrawn* are not waiting on
+  money.
+* **no payment has been made.** This is not the same as the state. A
+  transaction that is still `pending` — a bank transfer nobody has confirmed
+  yet — counts as paid while deliberately leaving the registration *Awaiting
+  payment*. Somebody who has already sent the money must not be chased for it.
+* **the fee is above zero.** Removing the fee from registrations that had not
+  paid it (*Update Registration Fee* → *Remove fee*) stops Indico asking for the
+  money without moving the state, so the price is the only thing left that says
+  there is nothing to pay.
+
+The first is a filter on the query; the other two are decided in Python,
+because Indico computes both — the price from the registration's billable
+answers, the payment from its latest transaction — so neither can be asked of
+the database. Both are eager-loaded, or reading them would be two more queries
+per registrant.
+
+### The dialog
+
+The button opens core's own e-mail dialog, prefilled: a subject and a body an
+organizer can rewrite, the recipient list, the sender addresses they are
+allowed to send as, and a preview. It is a subclass of core's *E-mail* action
+rather than a new mail sender, so placeholders, the event locale and the event
+log entry all behave exactly as they do everywhere else.
+
+The one addition is **`{amount}`**, which renders what that registrant still
+owes. The body is one string sent to everybody, so the figure can only reach
+the mail as a placeholder — core replaces it per recipient. It is offered to
+every registration e-mail, core's own *E-mail* dialog included, because
+placeholders are registered per context for the whole instance; that is also
+why the feature has an admin switch, since two plugins claiming `amount` would
+break *every* registration e-mail rather than only the ones using it.
+
+**Attach ticket** is removed from the dialog. Nobody on this list has paid, so
+there is no ticket to attach, and the switch would offer a choice whose only
+outcomes are "nothing" and "a warning explaining why it was nothing".
+
+### What is not trusted
+
+The recipients are found, never read off the request — on the send as well as
+on the open. So the mail goes to whoever still owes money at the moment **Send**
+is pressed, somebody who paid while the dialog sat open is dropped, and the
+endpoint cannot be talked into mailing somebody who was never on the list. Both
+endpoints check the admin switch and the event's payment feature again for the
+same reason: switched off is off, not merely hidden.
+
+### Why not the Actions menu
+
+That is where the rest of the bulk actions live, and core even has a signal for
+adding to it (`registrant_list_action_menu`). It does not work for this. Both
+the *Actions* dropdown itself and every entry inside it are rendered with the
+`disabled` class, which only `js-requires-selected-row` ever takes off again —
+so an action that deliberately ignores the selection cannot be reached there at
+all. The button goes through `registration-status-action-button` instead, which
+is core's own hook for an extra button in that toolbar and which nothing in
+core uses, so there is no ordering to negotiate with anybody.
 
 ## Working with the group registration plugin
 

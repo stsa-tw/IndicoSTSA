@@ -1,0 +1,18 @@
+{# The payment reminder button in the registrant list toolbar.
+
+   Rendered through core's `registration-status-action-button` hook, which
+   drops it into the toolbar group that already holds Moderation and Check-in
+   control.  The count is in the label rather than in the dialog alone so that
+   the button says what it is about to do before it is pressed -- and so that
+   an organizer can tell at a glance whether anybody still owes money.
+#}
+
+{% macro render_reminder_button(regform, count) %}
+    <button class="i-button icon-coins"
+            data-href="{{ url_for_plugin('stsa.payment_reminders', regform) }}"
+            data-title="{% trans %}Payment reminders{% endtrans %}"
+            data-ajax-dialog
+            title="{% trans %}Write to everybody whose registration fee is still outstanding.{% endtrans %}">
+        {%- trans %}Remind unpaid{% endtrans %} ({{ count }})
+    </button>
+{% endmacro %}

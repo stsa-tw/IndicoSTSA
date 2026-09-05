@@ -3,23 +3,29 @@
 from decimal import Decimal
 
 from flask import flash, redirect, session
+from werkzeug.exceptions import NotFound
 
 from indico.core.db import db
-from indico.core.plugins import WPJinjaMixinPlugin, url_for_plugin
+from indico.core.plugins import WPJinjaMixinPlugin, plugin_engine, url_for_plugin
 from indico.modules.events.registration.controllers.management import RHManageRegFormBase, RHManageRegFormsBase
+from indico.modules.events.registration.controllers.management.reglists import (RHRegistrationEmailRegistrants,
+                                                                                RHRegistrationEmailRegistrantsPreview)
+from indico.modules.events.registration.forms import EmailRegistrantsForm
 from indico.modules.events.registration.models.forms import RegistrationForm
 from indico.modules.events.registration.models.registrations import Registration
 from indico.modules.events.registration.views import WPManageRegistration
 from indico.modules.logs import EventLogRealm, LogKind
 from indico.util.i18n import _, ngettext
 from indico.web.forms.base import FormDefaults
-from indico.web.util import jsonify_data
+from indico.web.util import jsonify_data, jsonify_template
 
 from indico_stsa.constants import APPLIES_TO_BASE, PERCENT
 from indico_stsa.discount import format_rate
 from indico_stsa.forms import RegFormSettingsForm
 from indico_stsa.models.settings import STSASettings
+from indico_stsa.payments import find_unpaid, format_outstanding
 from indico_stsa.pricing import apply_member_discount, is_member_discounted
+from indico_stsa.reminders import default_body, default_subject
 from indico_stsa.util import (get_discount_data, get_settings, is_group_plugin_installed, provision_discount_field,
                               tables_exist)
 
@@ -160,6 +166,100 @@ class RHRecalculateDiscounts(RHSTSARegFormBase):
         else:
             flash(_('Every registration already had the right price.'), 'info')
         return jsonify_data(flash=False)
+
+
+class _PaymentReminderMixin:
+    """What both reminder endpoints have to establish before they do anything.
+
+    The toolbar button is only drawn where all of this holds, so reaching an
+    endpoint without it means a page that has been open a while or a URL typed
+    by hand.  Checking again here is what makes the admin switch mean what it
+    says -- off is off, not merely hidden -- and `NotFound` rather than a
+    refusal because a feature that is switched off is a page that is not there,
+    which is how core treats its own disabled features.
+
+    The recipients are *found*, never read off the request: `_process_args` on
+    core's e-mail handlers is where the submitted `registration_id` list is
+    turned into registrations, and skipping it is the whole point.
+    """
+
+    def _process_args(self):
+        RHManageRegFormBase._process_args(self)
+        plugin = plugin_engine.get_plugin('stsa')
+        if plugin is None or not plugin.settings.get('payment_reminders'):
+            raise NotFound(_('Payment reminders are switched off for this Indico.'))
+        if not self.event.has_feature('payment'):
+            raise NotFound(_('This event does not take payments, so there is nothing to chase.'))
+        self.registrations = self._find_recipients()
+
+    def _find_recipients(self):
+        raise NotImplementedError
+
+
+class RHSTSAPaymentReminders(_PaymentReminderMixin, RHRegistrationEmailRegistrants):
+    """Chase everybody on this form who has not paid, in one go.
+
+    Core's own *E-mail* action already does the hard parts -- placeholders,
+    the event locale, the sender addresses an organizer is allowed to use, the
+    preview, the log entry -- and only ever mails the rows somebody ticked.  So
+    this subclasses it and changes the one thing that matters: the recipients
+    are *found*, not submitted, which is what makes the toolbar button a single
+    click rather than "filter the list, select all, then compose".
+
+    Rebuilding the recipient list on the submit as well as on the open is
+    deliberate and not just tidiness.  It means the mail goes to whoever still
+    owes money at the moment Send is pressed -- somebody who paid while the
+    dialog sat open is dropped -- and it means the posted list of registration
+    IDs is never trusted, so this endpoint cannot be talked into mailing
+    somebody who was not on it.
+    """
+
+    def _find_recipients(self):
+        return find_unpaid(self.regform)
+
+    def _process(self):
+        if not self.registrations:
+            # Reachable: the button is only rendered when somebody owes money,
+            # but a page that has been open for a while has an old count on it.
+            return jsonify_template('stsa:payment_reminders.html', form=None, regform=self.regform,
+                                    count=0, outstanding=None)
+
+        with self.event.force_event_locale():
+            subject, body = default_subject(), default_body()
+        form = EmailRegistrantsForm(subject=subject, body=body, regform=self.regform,
+                                    registration_id=[r.id for r in self.registrations],
+                                    recipients=[r.email for r in self.registrations])
+        # Nobody in this list has paid, so there is no ticket to attach: core
+        # blocks tickets for unpaid registrations, and the switch would offer
+        # an organizer a choice whose only outcomes are "nothing" and "a
+        # warning about why it was nothing".
+        del form.attach_ticket
+
+        if form.validate_on_submit():
+            self._send_emails(form)
+            count = len(self.registrations)
+            flash(ngettext('The payment reminder was sent.',
+                           '{n} payment reminders were sent.', count).format(n=count), 'success')
+            return jsonify_data()
+
+        return jsonify_template('stsa:payment_reminders.html', form=form, regform=self.regform,
+                                count=len(self.registrations),
+                                outstanding=format_outstanding(self.registrations, self.regform.currency))
+
+
+class RHSTSAPaymentReminderPreview(_PaymentReminderMixin, RHRegistrationEmailRegistrantsPreview):
+    """Render the reminder as the first person on the list will read it.
+
+    Core's preview endpoint would have done, but the *Preview email* button is
+    wired to it by core's own JavaScript, which quotes the mail against
+    ``getSelectedRows()[0]`` -- and nothing is selected here, because the whole
+    point of the button is that nobody had to select anything.  Rather than
+    ship JavaScript to work around that, this picks the registration the JS
+    could not: the first one who owes money.
+    """
+
+    def _find_recipients(self):
+        return find_unpaid(self.regform)[:1]
 
 
 def _stored_discount(registration):

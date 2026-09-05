@@ -27,6 +27,10 @@ REQUIRED_FILES = [
     f'{PKG}/templates/overview.html',
     f'{PKG}/templates/_regform_settings.html',
     f'{PKG}/templates/_missing_tables.html',
+    # The payment reminder button renders on every registrant list, so a wheel
+    # without it breaks a page nobody asked this plugin about.
+    f'{PKG}/templates/_reglist_button.html',
+    f'{PKG}/templates/payment_reminders.html',
     f'{PKG}/static/dist/manifest.json',
     # Google's button artwork is redistributable and the plugin is useless
     # without at least the fallback locale.

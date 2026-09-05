@@ -1,0 +1,41 @@
+{# The payment reminder dialog.
+
+   A near-copy of core's `events/registration/management/email.html`, and it has
+   to be a copy rather than a reuse: that template builds the preview URL with
+   the relative endpoint `.email_registrants_preview`, which resolves against
+   whichever blueprint is handling the request -- so rendering it from this
+   plugin's blueprint asks Flask for `plugin_stsa.email_registrants_preview`
+   and raises `BuildError`.  The preview button keeps core's `preview-email`
+   id, because core's own delegated click handler is what drives it.
+#}
+
+{% from 'forms/_form.html' import form_header, form_rows, form_footer %}
+{% from 'message_box.html' import message_box %}
+
+{% if not form %}
+    {% call message_box('success') %}
+        {% trans %}Nobody on this registration form owes anything right now.{% endtrans %}
+    {% endcall %}
+    <div class="text-right">
+        <button class="i-button big" data-button-back>{% trans %}Close{% endtrans %}</button>
+    </div>
+{% else %}
+    {% call message_box('info') %}
+        {% trans count=count, outstanding=outstanding -%}
+            One registrant has not paid, and owes {{ outstanding }}.
+        {%- pluralize -%}
+            {{ count }} registrants have not paid, and owe {{ outstanding }} between them.
+        {%- endtrans %}
+        {% trans %}Everybody listed below gets this e-mail. Registrations that were paid while this dialog was
+                   open are dropped when you send.{% endtrans %}
+    {% endcall %}
+
+    {{ form_header(form) }}
+    {{ form_rows(form) }}
+    {% call form_footer(form) %}
+        <input type="submit" class="i-button highlight big" value="{% trans %}Send{% endtrans %}">
+        <input id="preview-email" class="i-button big" type="button" value="{%- trans %}Preview email{% endtrans -%}"
+               data-href="{{ url_for_plugin('stsa.payment_reminders_preview', regform) }}">
+        <button class="i-button big" data-button-back>{% trans %}Cancel{% endtrans %}</button>
+    {% endcall %}
+{% endif %}

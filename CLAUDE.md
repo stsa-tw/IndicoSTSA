@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds five
+An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds six
 independent, default-off customizations for the Singapore Taiwanese Student Association: e-mail
 subject prefixes, a per-registration-form member discount, a members-only gate on group
-registration, the Apple/Google wallet badges, and an STSA ticket design with Chinese-capable fonts.
+registration, the Apple/Google wallet badges, an STSA ticket design with Chinese-capable fonts, and
+a one-click payment reminder for everybody who still owes money.
 
 `README.md` documents *why* almost every design decision was made — read the relevant section before
 changing behaviour, because most of the odd-looking code is deliberate and the rejected alternatives
@@ -62,6 +63,7 @@ all the unit tests**, while their DB-touching counterparts are exercised only ag
 | [group_preview.py](indico_stsa/group_preview.py) — re-quoting the plan picker | `plugin._intercept_submission_data` |
 | [wallet.py](indico_stsa/wallet.py) — locale → artwork | [ticket_email.py](indico_stsa/ticket_email.py) |
 | [ticket.py](indico_stsa/ticket.py) — the design | [install_ticket.py](indico_stsa/install_ticket.py) |
+| [reminders.py](indico_stsa/reminders.py) — *who owes*, and what the mail says | [payments.py](indico_stsa/payments.py) — *finding* them |
 
 [constants.py](indico_stsa/constants.py) holds every shared name so modules that must not import
 each other still agree; [util.py](indico_stsa/util.py) holds lookups, field provisioning and the
@@ -148,6 +150,35 @@ back to dropping the characters.
 
 `install-ticket` is a CLI command and never runs automatically: the template is found by title and
 updated in place so events keep pointing at it, and re-running is how a design upgrade is applied.
+
+### Payment reminders
+
+A **Remind unpaid (N)** button in the registrant list toolbar, added through core's
+`registration-status-action-button` template hook — *not* `registrant_list_action_menu`: both the
+*Actions* dropdown and every entry in it carry the `disabled` class that only
+`js-requires-selected-row` removes, so an action that ignores the selection is unreachable there.
+
+`RHSTSAPaymentReminders` subclasses core's `RHRegistrationEmailRegistrants` and replaces only
+`_process_args`, so the recipients are **found, not submitted** — on the send as well as on the open,
+which is what drops somebody who paid while the dialog sat open and what stops the posted
+`registration_id` list being trusted. Everything else (placeholders, event locale, sender addresses,
+the log entry) is core's. `attach_ticket` is deleted from the form: nobody on the list has paid.
+
+Unpaid means all three of `state == unpaid`, `not is_paid` and `price > 0` — the last two decided in
+Python because both are computed properties (see `reminders.needs_reminder` for why each matters;
+the `is_paid`-but-`unpaid` case is a *pending* bank transfer). `payments.find_unpaid` eager-loads
+`data → field_data → field` and `transaction` or each is a query per registrant.
+
+The preview needs its own endpoint: core's `#preview-email` handler quotes the mail against
+`getSelectedRows()[0]`, and nothing is selected here, so `RHSTSAPaymentReminderPreview` picks the
+first unpaid registration instead. The dialog template is a copy of core's `email.html` because that
+one builds the preview URL from the relative endpoint `.email_registrants_preview`, which resolves
+against *this plugin's* blueprint and raises `BuildError`.
+
+`payments.OutstandingAmountPlaceholder` adds `{amount}` to the `registration-email` context, which is
+instance-wide — hence the `payment_reminders` admin switch, since a name collision would make
+`named_objects_from_signal` raise on every registration e-mail. Both endpoints re-check that switch
+and `event.has_feature('payment')`, so switching it off actually turns the feature off.
 
 ### Group registration plugin (optional companion)
 

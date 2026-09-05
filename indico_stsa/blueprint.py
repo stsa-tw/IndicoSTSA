@@ -11,3 +11,7 @@ blueprint.add_url_rule('/manage/registration/<int:reg_form_id>/stsa/', 'manage_s
                        management.RHSTSASettings, methods=('GET', 'POST'))
 blueprint.add_url_rule('/manage/registration/<int:reg_form_id>/stsa/recalculate', 'recalculate',
                        management.RHRecalculateDiscounts, methods=('POST',))
+blueprint.add_url_rule('/manage/registration/<int:reg_form_id>/stsa/payment-reminders', 'payment_reminders',
+                       management.RHSTSAPaymentReminders, methods=('GET', 'POST'))
+blueprint.add_url_rule('/manage/registration/<int:reg_form_id>/stsa/payment-reminders/preview',
+                       'payment_reminders_preview', management.RHSTSAPaymentReminderPreview, methods=('POST',))
