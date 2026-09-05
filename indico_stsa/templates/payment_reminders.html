@@ -20,14 +20,23 @@
         <button class="i-button big" data-button-back>{% trans %}Close{% endtrans %}</button>
     </div>
 {% else %}
+    {# Two paragraphs rather than two sentences: the box is as wide as the
+       dialog, so run together they come out as one line of small print that
+       nobody finishes reading.  `<p>` is the idiom the message box is built
+       for -- `_messageboxes.scss` already trims the margin off its first and
+       last child paragraph, which is why neither needs a class here. #}
     {% call message_box('info') %}
-        {% trans count=count, outstanding=outstanding -%}
-            One registrant has not paid, and owes {{ outstanding }}.
-        {%- pluralize -%}
-            {{ count }} registrants have not paid, and owe {{ outstanding }} between them.
-        {%- endtrans %}
-        {% trans %}Everybody listed below gets this e-mail. Registrations that were paid while this dialog was
-                   open are dropped when you send.{% endtrans %}
+        <p>
+            {%- trans count=count, outstanding=outstanding -%}
+                One registrant has not paid, and owes {{ outstanding }}.
+            {%- pluralize -%}
+                {{ count }} registrants have not paid, and owe {{ outstanding }} between them.
+            {%- endtrans -%}
+        </p>
+        <p>
+            {%- trans %}Everybody listed below gets this e-mail. Registrations that were paid while this
+                        dialog was open are dropped when you send.{% endtrans -%}
+        </p>
     {% endcall %}
 
     {{ form_header(form) }}
