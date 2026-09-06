@@ -31,3 +31,10 @@ indico_stsa/static/wallet/apple/*.png
 
 # Rendered ticket previews, regenerated on demand
 preview/
+
+# `scripts/sign-preview-pass.py` takes the Pass Type ID certificate and key as
+# files, and its instructions say to create them next to the repo. A signing
+# key must never reach a commit, and a signed pass is a ticket.
+*.pem
+*.p12
+*.pkpass

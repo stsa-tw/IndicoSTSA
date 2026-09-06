@@ -42,6 +42,11 @@ REQUIRED_FILES = [
     f'{PKG}/static/ticket/background.png',
     f'{PKG}/static/brand/logo-white.png',
     f'{PKG}/static/brand/emblem.png',
+    # The Apple Wallet pass. Without its logo a pass falls back to whatever
+    # WALLET_LOGO_URL points at, which on a light pass is usually invisible;
+    # without an icon it is not a valid pass at all.
+    f'{PKG}/static/wallet/pass/logo.png',
+    f'{PKG}/static/wallet/pass/icon.png',
     # Without this a ticket whose title has an emoji prints a crossed box.
     f'{PKG}/static/fonts/NotoEmoji.ttf',
     f'{PKG}/static/fonts/OFL.txt',

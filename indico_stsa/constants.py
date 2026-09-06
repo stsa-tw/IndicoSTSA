@@ -42,6 +42,20 @@ DEFAULT_SUBJECT_PREFIX = '[STSA 活動]'
 #: is the same one `indico_stsa.payments` filters the query by.
 UNPAID_STATE = 'unpaid'
 
+#: The STSA palette, sampled from the emblem: the merlion half and the bear
+#: half.  Here rather than in `indico_stsa.ticket` because the printed 門票 and
+#: the Apple Wallet pass are the same ticket in two media and have to agree on
+#: it, and neither module has any business importing the other.
+STRAIT = '#2F5478'
+FORMOSA = '#8A2424'
+INK = '#1C2733'
+GRAPHITE = '#6B7683'
+PAPER = '#FFFFFF'
+STRAIT_PALE = '#9DB4CC'
+#: A warm off-white, for the Apple Wallet pass.  Pure white reads as a system
+#: sheet in a wallet full of them; this is paper, which is what a ticket is.
+PARCHMENT = '#F4F1EE'
+
 #: Our addition to core's ``registration-email`` placeholders: what the
 #: registrant still owes.  Shared because the default reminder body writes it
 #: and the placeholder class answers to it.

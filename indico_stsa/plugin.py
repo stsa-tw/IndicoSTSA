@@ -33,6 +33,8 @@ from indico_stsa.reglist import REGLIST_FILTER_TEMPLATE, hide_internal_columns
 from indico_stsa.ticket_email import add_wallet_badges
 from indico_stsa.util import get_settings, is_group_login_required, is_group_plugin_installed
 from indico_stsa.wallet import VENDORS, badge_url
+from indico_stsa.wallet_pass import refined as refine_wallet_ticket
+from indico_stsa.wallet_pass import styled as style_wallet_pass
 
 
 class STSAPlugin(IndicoPlugin):
@@ -64,6 +66,7 @@ class STSAPlugin(IndicoPlugin):
         'rewrite_email_subjects': True,
         'email_subject_prefix': DEFAULT_SUBJECT_PREFIX,
         'wallet_badges': True,
+        'wallet_pass_design': True,
         'cjk_badge_fonts': True,
         'payment_reminders': True,
     }
@@ -132,6 +135,16 @@ class STSAPlugin(IndicoPlugin):
         self.template_hook('html-head', self._wallet_head_meta)
         self.connect(signals.core.before_notification_send, self._before_notification_send,
                      sender='notify-registration')
+
+        # -- the Apple Wallet pass -------------------------------------------
+        #
+        # Core fires these while building a pass, before `passfile.create(...)`
+        # signs anything, so what is set here is what ends up in the member's
+        # Wallet.  There is no other way in: the background colour is a literal
+        # in `build_pass_object`, and a signed pass cannot be repainted
+        # afterwards, by us or by the app.
+        self.connect(signals.event.registration.apple_wallet_ticket_object, self._refine_apple_wallet_ticket)
+        self.connect(signals.event.registration.apple_wallet_object, self._style_apple_wallet_pass)
 
         # -- printed tickets and badges --------------------------------------
         #
@@ -222,6 +235,35 @@ class STSAPlugin(IndicoPlugin):
             if url := badge_url(vendor):
                 tags.append(f'<meta name="stsa-wallet-{vendor}" content="{escape(url)}">')
         return ''.join(tags)
+
+    def _style_apple_wallet_pass(self, registration, obj=None, **kwargs):
+        """Repaint the pass in STSA's colours.
+
+        Wrapped like every other handler here, and for a sharper reason than
+        most: this runs while a participant is downloading their ticket, and an
+        exception would turn a working pass into an error page.  Indico's own
+        blue is a perfectly good pass, so that is what a failure leaves behind.
+        """
+        try:
+            if not self.settings.get('wallet_pass_design') or obj is None:
+                return
+            style_wallet_pass(obj)
+        except Exception:
+            self.logger.exception('Could not apply the STSA design to an Apple Wallet pass')
+
+    def _refine_apple_wallet_ticket(self, event, obj=None, **kwargs):
+        """Relabel the fields core put on the pass, and thin them out.
+
+        Same failure rule as the colours: a pass with core's own labels and
+        fields is a working ticket, and an exception here would be a download
+        that fails.
+        """
+        try:
+            if not self.settings.get('wallet_pass_design') or obj is None:
+                return
+            refine_wallet_ticket(obj)
+        except Exception:
+            self.logger.exception('Could not apply the STSA labels to an Apple Wallet ticket')
 
     def _before_notification_send(self, sender, email=None, registration=None, template_name=None,
                                   to_managers=False, **kwargs):

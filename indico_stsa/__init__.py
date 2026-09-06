@@ -1,6 +1,6 @@
 """Singapore Taiwanese Student Association customizations for Indico.
 
-Six things STSA needs that core Indico does not provide:
+Seven things STSA needs that core Indico does not provide:
 
 * every outgoing e-mail carries STSA's own subject prefix instead of
   ``[Indico]``;
@@ -12,6 +12,8 @@ Six things STSA needs that core Indico does not provide:
 * Apple's and Google's own wallet badges in place of Indico's dropdown, on the
   registration page and in the e-mail the ticket arrives with;
 * an STSA ticket design, and a font that can actually draw Chinese on it;
+* the association's colours and marks on the Apple Wallet pass, so a saved
+  ticket and a printed one look like the same association issued them;
 * a one-click payment reminder to everybody on a registration form whose fee is
   still outstanding, each mail naming what that person owes.
 
