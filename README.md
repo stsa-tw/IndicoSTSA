@@ -2,7 +2,7 @@
 
 Customizations for the Singapore Taiwanese Student Association.
 
-Six things, each independently switchable:
+Seven things, each independently switchable:
 
 1. **E-mail subject prefixes.** Every mail Indico sends goes out with STSA's own
    prefix instead of `[Indico]`.
@@ -18,6 +18,8 @@ Six things, each independently switchable:
    in the e-mail the ticket arrives with — and they work without signing in.
 5. **An STSA ticket**, in the association's own colours and marks, with a font
    that can actually draw Chinese.
+6. **STSA colours on the Apple Wallet pass**, so the saved ticket and the
+   printed one belong to the same association.
 6. **Payment reminders.** One button in the registrant list writes to everybody
    whose registration fee is still outstanding, each mail naming what that
    person owes.
@@ -375,7 +377,134 @@ If the font is ever missing, or composing fails, the characters are dropped
 instead. A title reading 秋季迎新晚會 is a small loss; one reading 秋季迎新晚會 ⊠
 looks broken.
 
-## 6. Payment reminders
+## 6. The Apple Wallet pass
+
+Indico builds the pass and paints it `#007cac`, its own blue, hardcoded in
+`AppleWalletManager.build_pass_object`. This repaints it — ink on parchment,
+the association's red on the labels, the emblem where the logo goes — and tidies
+what is on it.
+
+```
+ ┌────────────────────────────────┐
+ │ ◉ emblem            TICKET     │  the header field: what a stack shows
+ │                     #1042      │
+ │ EVENT                          │  labels #8A2424, the association's red
+ │ 2026 STSA Boba Chat            │  values #1C2733, ink
+ │ DATE             VENUE         │  second column right-aligned
+ │ ATTENDEE                       │
+ │            ▣ QR                │
+ │       Show at check-in         │  the barcode's altText
+ └────────────────────────────────┘  ground #F4F1EE
+```
+
+### The line under the barcode
+
+Wallet has exactly one text slot there — the barcode's `altText`, meant to carry
+the code in readable form so a broken scanner is not a dead end. Indico leaves it
+empty, and an STSA check-in code is a UUID nobody would read aloud, so the space
+carries the one instruction a ticket needs instead. It also earns its room: the
+barcode panel grows to fit the caption, which takes back some of the space Wallet
+otherwise leaves between the fields and the code.
+
+### Where the red goes
+
+On the labels, not the values. Apple gives a pass three colours and not one per
+field, so red on the values means red on *every* value — the date, the venue,
+the name, all shouting equally. A label is small, repeated and read past, so it
+carries the association's colour without competing with what the member came to
+read. Both were signed and looked at side by side before choosing.
+
+### The fields are not core's
+
+`apple_wallet_ticket_object` relabels them and does two other things. The
+**e-mail comes off the front**: a pass is readable from a locked phone, and an
+address is not something a ticket needs to show, so it stays on the back where
+core also puts it. And the **ticket number comes forward** from the back into
+the header, top right — the one line Wallet shows while passes are stacked, so
+it is what a member sees without opening anything.
+
+Labels are English, which is a typographic decision rather than a linguistic
+one: Wallet sets them all at one small size, and a bilingual label puts Chinese
+beside Latin there — two type colours in a caption meant to be read past. A
+member's own name still arrives in whatever script it is written in.
+
+The logo is the **emblem, in colour**, not the lockup. Apple caps the logo at
+160×50pt; a wordmark that wide arrives as type too small to read, sitting low in
+a box wider than the mark is tall. The emblem is square, fills its 50 points, and
+is left-aligned so it lines up with the fields beneath it.
+
+### What a pass can and cannot be
+
+Three colours, a logo, an icon, and fields Apple lays out itself. There is no
+typeface to choose, nowhere to put an icon beside a field, no rules and no
+bands. A pass takes a *palette*, not a design — the design is the printed 門票
+above, and this is that design reduced to what a `.pkpass` can carry.
+
+One consequence worth knowing before changing anything: `foregroundColor` is one
+colour for **every** value. A design with a red headline and near-black details
+cannot be expressed; it is all red or all near-black.
+
+### Why the images ship
+
+Core takes `logo.png` and `icon.png` from `WALLET_LOGO_URL`, one URL for the
+whole instance, pointing at whichever mark was chosen for Indico's blue. On a
+parchment pass the white lockup arrives as a white mark on a light field —
+invisible, and invisible in a way no code could detect. So
+`scripts/build-wallet-artwork.py` renders the emblem — as the logo and as the
+icon — from the marks in `static/brand/`, and it ships in the wheel.
+
+They are attached by writing into `Pass._files`, which is where `IndicoPass`'s
+own `add_file_from_url` puts them. That method was the obvious route and is the
+wrong one twice over: it fetches over HTTP, so a pass would cost three round
+trips from Indico to itself, and **when a fetch fails it substitutes Indico's
+logo** — worse than no image. Reading a file that shipped in the wheel cannot
+fail that way. `_files` is private to a third-party library, so it is touched
+defensively: no dict, no images, and a pass that still has its colours.
+
+### Why there is no strip, thumbnail or footer
+
+All three were tried on a signed pass. A `strip.png` is how a pass gets a band
+across its top, and **with one present Wallet renders the event title in white**
+rather than in `foregroundColor`, because it assumes the strip behind the title
+is dark — on parchment, a title nobody can read. A `thumbnail.png` renders the
+emblem beside the title and takes its width from the second column, until the
+date and the venue touch. A `footer.png` is silently ignored on an event ticket.
+
+Nothing about the pass format says any of this, and no drawing predicts it — the
+mock-up rendered the title in the colour it was given. This is the reason
+`sign-preview-pass.py` exists.
+
+### Seeing it before issuing one
+
+Two ways, and they answer different questions.
+
+```bash
+python scripts/preview-wallet-pass.py       # a drawing of the pass
+```
+
+Renders the front from the same constants the plugin paints it with, so the
+picture cannot drift from what ships. It is a mock-up: Apple's metrics are not
+published, so it answers "do these colours work", not "where exactly will that
+word sit".
+
+```bash
+pip install wallet-py3k cryptography
+python scripts/sign-preview-pass.py --certificate cert.pem --key key.pem
+```
+
+Builds and signs a real `.pkpass`. AirDrop it to a phone, or drag it onto a
+booted simulator, and Wallet renders it exactly as it will for a member —
+because it *is* a pass. **Deploying the plugin is not needed for this; the
+certificate is.** iOS refuses unsigned passes everywhere, including the
+Simulator, which is why no drawing can stand in for one.
+
+The key is read from the path given and never stored, and `*.pem`, `*.p12` and
+`*.pkpass` are gitignored so neither it nor a signed pass can reach a commit.
+The same PEM blocks are on the Indico category under Apple Wallet. To try a
+colour before committing it, `--background`, `--foreground` and `--label` take
+a hex each and override the palette for that one pass.
+
+## 7. Payment reminders
 
 The registrant list gets a **Remind unpaid (3)** button, next to *Moderation*
 and *Check-in control*. It writes to everybody on that registration form whose

@@ -73,6 +73,15 @@ avoid-escape = true
 [lint.per-file-ignores]
 # a build helper whose whole job is shelling out to Indico's own build script
 'build-assets.py' = ['S404', 'S603']
+# both read the plugin's own constants, so they have to find the package before
+# they can import them -- the alternative is a second copy of the palette kept in
+# step by hand, which is what they exist to prevent
+'scripts/preview-wallet-pass.py' = ['E402']
+'scripts/build-wallet-artwork.py' = ['E402']
+# N802: `_createSignature` is the library's method name, overridden verbatim
+'scripts/sign-preview-pass.py' = ['E402', 'N802']
 # the plugin must never break an email or a page over a malformed setting
 'indico_stsa/emails.py' = ['S110']
 'tests/*' = ['S101', 'S105', 'S106', 'RUF069']
+# S105: `PASS_TICKET_NUMBER_FIELD` is one of Apple's field keys, not a secret
+'indico_stsa/wallet_pass.py' = ['S105']
