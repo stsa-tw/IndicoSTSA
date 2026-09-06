@@ -1,6 +1,6 @@
 """Lookups, provisioning, and the bridge to the group registration plugin."""
 
-from flask import has_request_context, session
+from flask import has_request_context, request, session
 from sqlalchemy import inspect as sa_inspect
 
 from indico.core.db import db
@@ -166,6 +166,35 @@ def registration_is_member(registration, *, management=False):
     if management or registration.created_by_manager:
         return True
     return has_request_context() and session.user is not None and session.user == registration.user
+
+
+def email_lock_member(registration=None, *, management=False):
+    """The member whose membership address the form's e-mail field is held to.
+
+    ``None`` means the lock does not apply, and every one of those cases is a
+    case where the address on the form is somebody else's business:
+
+    * nobody is signed in, so there is no membership to hold it to;
+    * an organizer is working in the management area, where adding a
+      participant means typing *that participant's* address;
+    * the registration being edited is not the signed-in member's own.  A
+      registration is editable from the link in its confirmation e-mail, so the
+      person in front of it need not be the person it belongs to, and a member
+      opening somebody else's must not stamp their own address onto it;
+    * an invitation is being answered.  Its address is the organizer's choice,
+      and core writes *that* address into the registration whatever was
+      submitted -- so a lock here could only refuse a registration Indico was
+      going to make correctly anyway.  The token is read from the query string
+      because that is where core reads it too, on the form and on its live
+      e-mail check alike.
+    """
+    if management or not has_request_context() or session.user is None:
+        return None
+    if request.args.get('invitation'):
+        return None
+    if registration is not None and registration.user != session.user:
+        return None
+    return session.user
 
 
 # -- field provisioning ------------------------------------------------------

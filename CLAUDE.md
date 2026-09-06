@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds six
+An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds seven
 independent, default-off customizations for the Singapore Taiwanese Student Association: e-mail
 subject prefixes, a per-registration-form member discount, a members-only gate on group
-registration, the Apple/Google wallet badges, an STSA ticket design with Chinese-capable fonts, and
-a one-click payment reminder for everybody who still owes money.
+registration, the Apple/Google wallet badges, an STSA ticket design with Chinese-capable fonts, a
+one-click payment reminder for everybody who still owes money, and holding a signed-in member's
+registration e-mail to the address on their membership.
 
 `README.md` documents *why* almost every design decision was made — read the relevant section before
 changing behaviour, because most of the odd-looking code is deliberate and the rejected alternatives
@@ -64,6 +65,7 @@ all the unit tests**, while their DB-touching counterparts are exercised only ag
 | [wallet.py](indico_stsa/wallet.py) — locale → artwork | [ticket_email.py](indico_stsa/ticket_email.py) |
 | [ticket.py](indico_stsa/ticket.py) — the design | [install_ticket.py](indico_stsa/install_ticket.py) |
 | [reminders.py](indico_stsa/reminders.py) — *who owes*, and what the mail says | [payments.py](indico_stsa/payments.py) — *finding* them |
+| [email_lock.py](indico_stsa/email_lock.py) — *which* field, and *whether* an address is the member's | `util.email_lock_member` — *whom* the lock applies to |
 
 [constants.py](indico_stsa/constants.py) holds every shared name so modules that must not import
 each other still agree; [util.py](indico_stsa/util.py) holds lookups, field provisioning and the
@@ -109,6 +111,25 @@ is the fee, so moving it would compound the two discounts, which the server
 never does. `payerBasePrice` needs group registration **0.2.4**; older versions
 have only `basePrice`, and `quote_member_price` falls back to it for a quote
 that is high rather than absent.
+
+### The membership's e-mail address
+
+While a member is signed in, the registration form's *E-mail* field is held to an address on their
+account. The padlock is drawn by writing `lockedReason` into the flat submission data (the same
+interception as the group plan picker's price) and **not** through `is_field_data_locked`: core
+*skips* a locked field when a registration is created, and `Registration.email` is not nullable, so
+that signal would turn every registration into an integrity error. Core's own `data-lock-email` is
+not available either — the template always renders it, and a duplicate attribute is not read.
+
+The rule is enforced by `before_check_registration_email`, which core runs both on the form's live
+check and on the submitted registration; it answers with core's own `email-other-user` conflict
+because the form renders that as "This email address is not associated with your Indico account"
+and renders an unknown one as something wrong and alarming. Every address on the account is
+accepted (`get_user_by_email` matches secondary ones, so those registrations are already linked to
+the right membership). Organizers, somebody else's registration opened from its link, and
+invitations are all carve-outs — see `util.email_lock_member`. The draft skips the e-mail field
+while the lock applies, or it would restore an address the server refuses into a field nobody can
+correct.
 
 ### Client side
 

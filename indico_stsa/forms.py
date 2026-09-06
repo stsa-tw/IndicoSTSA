@@ -41,6 +41,13 @@ class STSASettingsForm(IndicoForm):
                       'still outstanding, and an {amount} placeholder to the registration e-mail dialogs. Switch it '
                       'off if another plugin claims that placeholder name.'))
 
+    lock_member_email = BooleanField(
+        _('Register under the membership address'), widget=SwitchWidget(),
+        description=_('Holds the e-mail field on every registration form to the address on the membership of '
+                      'whoever is signed in, so that the registrations a member makes can always be matched '
+                      'back to them. Any address on the account is accepted, not only the first. Organizers adding '
+                      'registrations, and invitations addressed to somebody by an organizer, are not affected.'))
+
     def validate_email_subject_prefix(self, field):
         if field.data and len(field.data) > 60:
             raise ValidationError(_('That prefix is too long for an e-mail subject.'))

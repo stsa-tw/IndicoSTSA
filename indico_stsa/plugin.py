@@ -20,6 +20,7 @@ from indico.web.menu import SideMenuItem
 from indico_stsa.blueprint import blueprint
 from indico_stsa.constants import DEFAULT_SUBJECT_PREFIX
 from indico_stsa.discount import format_rate
+from indico_stsa.email_lock import foreign_email_error, is_membership_address, lock_email_field
 from indico_stsa.emails import rewrite_subject
 from indico_stsa.fields import MemberDiscountField
 from indico_stsa.forms import STSASettingsForm
@@ -31,7 +32,7 @@ from indico_stsa.payments import OutstandingAmountPlaceholder, find_unpaid
 from indico_stsa.pricing import preview_base_price
 from indico_stsa.reglist import REGLIST_FILTER_TEMPLATE, hide_internal_columns
 from indico_stsa.ticket_email import add_wallet_badges
-from indico_stsa.util import get_settings, is_group_login_required, is_group_plugin_installed
+from indico_stsa.util import email_lock_member, get_settings, is_group_login_required, is_group_plugin_installed
 from indico_stsa.wallet import VENDORS, badge_url
 
 
@@ -48,8 +49,10 @@ class STSAPlugin(IndicoPlugin):
     everything they had already typed still in place.
 
     An STSA membership is an account on this site, so a member is anyone signed
-    in. Where the group registration plugin is also installed, group
-    registration can be restricted to signed-in members too.
+    in, and the address on their membership is the one they register with: the
+    e-mail field is held to it while they are signed in. Where the group
+    registration plugin is also installed, group registration can be restricted
+    to signed-in members too.
 
     It also swaps Indico's "Add to Wallet" dropdown for the standard Apple and
     Google wallet badges, which is what participants actually look for, gives
@@ -66,6 +69,7 @@ class STSAPlugin(IndicoPlugin):
         'wallet_badges': True,
         'cjk_badge_fonts': True,
         'payment_reminders': True,
+        'lock_member_email': True,
     }
 
     def init(self):
@@ -97,6 +101,14 @@ class STSAPlugin(IndicoPlugin):
         # `indico_stsa.group_preview`.
         self.connect(signals.plugin.interceptable_function, self._intercept_submission_data,
                      sender=interceptable_sender(get_flat_section_submission_data))
+
+        # A signed-in member registers under the address on their membership.
+        # The padlock on the field is drawn by the interception above; this is
+        # the check that enforces it, and core runs it on the form's live
+        # "is this address all right?" request and on the submitted
+        # registration alike.  See `indico_stsa.email_lock` for why the lock is
+        # deliberately *not* `is_field_data_locked`.
+        self.connect(signals.event.before_check_registration_email, self._before_check_registration_email)
 
         # -- management UI ---------------------------------------------------
         self.connect(signals.menu.items, self._sidemenu_items, sender='event-management-sidemenu')
@@ -282,24 +294,70 @@ class STSAPlugin(IndicoPlugin):
         return get_locked_field_reason(sender, registration)
 
     def _intercept_submission_data(self, sender, func=None, args=None, **kwargs):
-        """Quote the member price in the group plugin's plan picker.
+        """Fix up the data the participant's registration form is rendered from.
 
-        Building the form data is the original function's job, so it is called
-        first and its result handed back whatever happens next: this is the
-        participant's own registration form, and a picker quoting the standard
-        fee is a far smaller thing to lose than the form itself.
+        Two things are written into it: the price the group plugin's plan
+        picker quotes, and the padlock on the e-mail field of a member who is
+        signed in.  They are guarded separately because they have nothing to do
+        with each other, and losing both because one of them raised would be a
+        poor trade.
+
+        Building the form data is the original function's job either way, so it
+        is called first and its result handed back whatever happens next: this
+        is the participant's own registration form, and a picker quoting the
+        standard fee -- or an e-mail field nobody put a padlock on -- is a far
+        smaller thing to lose than the form itself.
         """
         args.apply_defaults()
         form_data = func(*args.args, **args.kwargs)
+        regform = args.arguments['regform']
+        management = args.arguments['management']
+        registration = args.arguments['registration']
         try:
-            base_price = preview_base_price(args.arguments['regform'],
-                                            management=args.arguments['management'],
-                                            registration=args.arguments['registration'])
+            base_price = preview_base_price(regform, management=management, registration=registration)
             if base_price is not None:
                 quote_member_price(form_data, base_price)
         except Exception:
             self.logger.exception('Could not quote the member price in the group plan picker')
+        try:
+            if self._member_email_lock(registration, management=management) is not None:
+                lock_email_field(form_data)
+        except Exception:
+            self.logger.exception('Could not lock the e-mail field to the membership address')
         return form_data
+
+    def _member_email_lock(self, registration=None, *, management=False):
+        """The member the e-mail lock applies to here, or ``None``.
+
+        The setting is read on this side rather than in `email_lock_member` so
+        that switching it off really does turn the feature off -- the padlock
+        and the check that enforces it are two different mechanisms and would
+        otherwise have to agree by accident.
+        """
+        if not self.settings.get('lock_member_email'):
+            return None
+        return email_lock_member(registration, management=management)
+
+    def _before_check_registration_email(self, sender, email=None, registration=None, management=False, **kwargs):
+        """Turn away an address that is not on the signed-in member's account.
+
+        Core asks this of every address before it is used, both when the form
+        checks one as it is typed and when a registration is submitted, so this
+        is the half that actually enforces the lock: the disabled input is only
+        what a participant sees.
+
+        Answering ``None`` is answering "nothing to add", which is what every
+        failure here does -- an address core would have accepted on its own is
+        the right thing to fall back to.
+        """
+        try:
+            member = self._member_email_lock(registration, management=management)
+            if member is None or is_membership_address(email, member.all_emails):
+                return None
+            return foreign_email_error()
+        except Exception:
+            self.logger.exception('Could not check a registration e-mail against the membership')
+            return None
 
     # -- management UI -------------------------------------------------------
 
@@ -416,7 +474,8 @@ class STSAPlugin(IndicoPlugin):
         settings = get_settings(regform)
         discount_on = settings is not None and settings.member_discount_enabled
         group_gate_on = is_group_login_required(regform)
-        if not discount_on and not group_gate_on:
+        email_locked = self._member_email_lock(registration, management=management) is not None
+        if not discount_on and not group_gate_on and not email_locked:
             return None
 
         anonymous = not management and session.user is None
@@ -441,5 +500,10 @@ class STSAPlugin(IndicoPlugin):
             'discountAppliesTo': settings.applies_to if discount_on else None,
             'noticeText': (settings.notice_text or '') if discount_on else '',
             'groupLoginRequired': group_gate_on,
+            # Whether the e-mail field is held to the membership's address.
+            # The padlock itself is server-side; this is here for the draft,
+            # which must not put a typed-in address back into a field the
+            # participant can no longer correct.
+            'lockEmail': email_locked,
         }
         return {'data-stsa': json.dumps(config)}

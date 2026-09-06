@@ -2,7 +2,7 @@
 
 Customizations for the Singapore Taiwanese Student Association.
 
-Six things, each independently switchable:
+Seven things, each independently switchable:
 
 1. **E-mail subject prefixes.** Every mail Indico sends goes out with STSA's own
    prefix instead of `[Indico]`.
@@ -21,6 +21,9 @@ Six things, each independently switchable:
 6. **Payment reminders.** One button in the registrant list writes to everybody
    whose registration fee is still outstanding, each mail naming what that
    person owes.
+7. **The membership's e-mail address.** A member who is signed in registers
+   under the address on their membership, so their registrations can always be
+   matched back to them.
 
 A **member** is anyone signed in. An STSA membership *is* an account on the
 site: there is no membership table and no separate sign-up, so "becoming a
@@ -163,6 +166,11 @@ halves of that matter:
 So the test is `registration.user is not None and session.user == registration.user`.
 Registrations created from the management area are trusted instead: an organizer
 adding a participant has made that decision deliberately.
+
+The link a registration has to a membership account is the whole test, so it is
+not left to whatever somebody types: while a member is signed in, the e-mail
+field is held to the address on their membership — see
+[The membership's e-mail address](#7-the-memberships-e-mail-address).
 
 Once earned, the discount **sticks**. Modifying a registration only ever adds
 the discount, never removes it — a participant may well be editing from the link
@@ -450,6 +458,77 @@ so an action that deliberately ignores the selection cannot be reached there at
 all. The button goes through `registration-status-action-button` instead, which
 is core's own hook for an extra button in that toolbar and which nothing in
 core uses, so there is no ordering to negotiate with anybody.
+
+## 7. The membership's e-mail address
+
+On the plugin's admin page, on by default.
+
+Somebody who is signed in finds the registration form's **E-mail** field filled
+in from their account, as Indico has always filled it in — and now with a
+padlock next to it, saying *Your STSA membership is registered under this
+address*. They register under the address on their membership, and the
+association can match every registration back to the member who made it. It is
+also what keeps the member discount honest: the discount is decided from the
+link between a registration and an account, and that link is made from this
+field.
+
+Any address **on the account** is accepted, not only the first one. Indico looks
+a registration's user up with `get_user_by_email`, which matches secondary
+addresses too, so a member who registered under one of theirs is already linked
+to the right membership; refusing it would leave them with a registration they
+could no longer edit, because the address it already holds is one the form would
+no longer take.
+
+Three cases are deliberately left alone:
+
+- **Organizers.** Adding a registration from the management area means typing
+  *that participant's* address, so nothing there is locked or checked.
+- **Somebody else's registration.** A registration is editable from the link in
+  its confirmation e-mail, so the person in front of it need not be the person
+  it belongs to. The lock applies only when the registration is the signed-in
+  member's own — a member who opens somebody else's link must not stamp their
+  own address onto it.
+- **Invitations.** The address on an invitation is the organizer's choice, and
+  core writes *that* address into the registration whatever was submitted. A
+  lock there could only refuse a registration Indico was about to make
+  correctly.
+
+### The padlock is not `is_field_data_locked`
+
+That signal is the obvious way to lock a field, and it is what the member
+discount field uses — but it means far more than "the participant may not edit
+this". Core **skips** a locked field when a registration is created or
+modified, leaving its data empty; that is exactly why the discount field can
+have this plugin as its only writer. Doing the same to the e-mail field would be
+fatal: `Registration.email` is not nullable and is written from that same loop,
+so every registration would end in an integrity error long before any handler of
+ours could put the address back.
+
+So the padlock is drawn by writing `lockedReason` into the flat submission data
+the form is rendered from — the same key core's own `get_locked_reason` fills in
+there, so the participant gets core's disabled input and core's padlock with our
+wording under it, and none of core's write-side behaviour changes. Core's own
+`data-lock-email`, which is how an invitation locks the field, is not available:
+the template always renders it, and a second copy of an attribute is not read.
+
+### What actually enforces it
+
+A disabled input is a courtesy, not a rule. The rule is
+`before_check_registration_email`, which core asks of every address before it is
+used — both when the form checks one as it is typed and when a registration is
+submitted, on a new registration and on a modification alike. So a hand-built
+POST meets it too, and the answer is core's own `email-other-user` conflict,
+which the registration form already renders as *This email address is not
+associated with your Indico account*. Answering with a name of our own would
+leave the form falling through to a sentence about the account the registration
+will not be linked to, which is both alarming and wrong.
+
+The draft that carries answers across the trip to the login page leaves the
+e-mail field out once the lock applies. Restoring the address somebody typed
+while signed out would put a value the server refuses into the one field they
+can no longer correct — and core has already filled it in from the account they
+have just signed in with, which is the address they are registering under
+anyway.
 
 ## Working with the group registration plugin
 
