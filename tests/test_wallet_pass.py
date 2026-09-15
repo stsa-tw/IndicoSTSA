@@ -1,240 +1,314 @@
-"""What the Apple Wallet pass is repainted in, and how its fields are tidied."""
+"""What the Apple Wallet pass is drawn from, and what survives the drawing."""
+
+import json
+from dataclasses import replace
 
 import pytest
 
-from indico_stsa import constants, ticket
-from indico_stsa.constants import FORMOSA, INK, PARCHMENT
-from indico_stsa.wallet_pass import (ALIGN_RIGHT, IMAGE_NAMES, PASS_BARCODE_CAPTION, PASS_COLORS,
-                                    PASS_FIELD_LABELS, PASS_HEADER_LABEL, PASS_LOGO_TEXT, images, refined,
-                                    styled)
+from indico_stsa.wallet_pass import (ICON_FALLBACK, PassTicket, images, pass_json,
+                                     style_key, styled, template)
+
+
+TICKET = PassTicket(
+    title='2026 STSA 中秋烤肉',
+    start='2026-09-25T18:00:00+08:00',
+    end='2026-09-25T22:00:00+08:00',
+    venue='East Coast Park · Area D',
+    venue_name='East Coast Park',
+    room_name='Area D',
+    address='920 East Coast Parkway, Singapore 449875',
+    event_url='https://event.stsa.tw/event/42/',
+    holder='陳小美',
+    friendly_id='7',
+    qr_message='{"i":[2,"event.stsa.tw","AAAAAAAAQACAAAAAAAAAAw=="]}',
+)
+
+#: What core sets on the pass from the certificate's subject before the signal
+#: fires.  Wallet checks these against the signature.
+#:
+#: Deliberately *not* the values in the template: the point of
+#: `test_identity_overrides_whatever_the_template_was_saved_with` is that the
+#: certificate wins, and a fixture that agreed with the template would prove
+#: nothing.  The real pass type is `pass.tw.stsa.event`.
+IDENTITY = {
+    'passTypeIdentifier': 'pass.example.not-the-template',
+    'teamIdentifier': 'FJX3SGU9AL',
+    'serialNumber': '11111111-2222-4333-8444-555555555555',
+    'formatVersion': 1,
+}
 
 
 class FakePass:
     """Stands in for `wallet.models.Pass`, which needs a certificate to build.
 
-    Only the four attributes this module writes; anything else it touched would
-    show up here as an `AttributeError` rather than silently in production.
+    Only what this module reads or writes; anything else it touched would show
+    up here as an `AttributeError` rather than silently in production.
 
     The camelCase is Apple's, via the `wallet` library, and is what the real
     object is named -- spelling it our way here would test the wrong thing.
     """
 
-    class FakeBarcode:
-        def __init__(self):
-            self.altText = ''
-
     def __init__(self):
-        self._files = {}
-        self.barcode = FakePass.FakeBarcode()
-        self.backgroundColor = '#007cac'
-        self.foregroundColor = '#ffffff'
-        self.labelColor = '#ffffff'
-        self.logoText = 'Some Legal Entity Pte Ltd'
+        self._files = {'icon.png': b'indico', 'logo.png': b'indico'}
+        self.passTypeIdentifier = IDENTITY['passTypeIdentifier']
+        self.teamIdentifier = IDENTITY['teamIdentifier']
+        self.serialNumber = IDENTITY['serialNumber']
 
 
-def test_repaints_every_colour_indico_sets():
-    """Core sets all three, so all three have to be replaced.
+@pytest.fixture
+def design():
+    return template()
 
-    Replacing only the background would leave labels that were chosen against a
-    blue which is no longer there.
+
+@pytest.fixture
+def built(design):
+    return pass_json(TICKET, IDENTITY, design)
+
+
+@pytest.fixture
+def style(design):
+    return style_key(design)
+
+
+def fields_of(built, style):
+    return {f['key']: f for bucket in built[style].values() for f in bucket}
+
+
+# -- the design comes from the template, not from here ------------------------
+
+def test_style_key_is_found_by_shape_not_by_name(design):
+    """Switching the style in Pass Designer renames the key.
+
+    `posterGeneric` today; whatever Apple calls the layout after that later.
+    Naming it in code would mean a silent revert to core's `eventTicket` the
+    first time somebody changed the design.
     """
-    result = styled(FakePass())
-
-    assert result.backgroundColor == PARCHMENT
-    assert result.foregroundColor == INK
-    assert result.labelColor == FORMOSA
+    assert style_key(design) in design
+    assert any(k.endswith('Fields') for k in design[style_key(design)])
 
 
-def test_replaces_the_certificate_derived_logo_text():
-    """Indico fills this from the certificate's `O` field.
+def test_a_design_with_no_style_key_is_an_error():
+    with pytest.raises(ValueError):
+        style_key({'formatVersion': 1, 'description': 'nothing to draw'})
 
-    That is whatever the Apple Developer account is registered as -- a legal
-    name, and not necessarily one anybody at the door would recognise.
+
+@pytest.mark.parametrize('key', ('backgroundColor', 'foregroundColor', 'labelColor',
+                                 'logoText', 'description', 'organizationName',
+                                 'sharingProhibited'))
+def test_the_template_supplies_the_design(built, design, key):
+    """Every appearance key is quoted, so redesigning is not a commit here.
+
+    `sharingProhibited` is in the list for a second reason: a ticket QR *is* the
+    credential -- whoever holds it can be checked in as that member -- so Wallet
+    must not offer to pass it along.
     """
-    assert styled(FakePass()).logoText == PASS_LOGO_TEXT
+    assert built.get(key) == design.get(key)
 
 
-def test_styles_in_place_and_returns_the_same_object():
-    """The caller in `plugin.py` reads as one line and relies on this."""
-    passfile = FakePass()
-    assert styled(passfile) is passfile
+def test_static_copy_stays_editable_in_pass_designer(built, design, style):
+    """Fields with nothing registration-specific keep the template's words.
 
-
-def test_draws_from_the_same_palette_as_the_printed_ticket():
-    """One association, one palette, two media.
-
-    The pass is light where the stub is navy, which is a choice about where each
-    one is looked at -- but both come out of `constants`, and somebody
-    hardcoding a hex into either is the drift this is here to catch.
+    The organiser line and the door notice are copy, not data.  Burying them in
+    Python would mean a release to fix a typo.
     """
-    assert PASS_COLORS['backgroundColor'] == constants.PARCHMENT
-    assert PASS_COLORS['foregroundColor'] == ticket.INK
-    assert PASS_COLORS['labelColor'] == ticket.FORMOSA
+    quoted = fields_of(design, style)
+    written = fields_of(built, style)
+    for key in ('organiser', 'notice'):
+        assert written[key]['value'] == quoted[key]['value']
 
 
-@pytest.mark.parametrize('colour', PASS_COLORS.values())
-def test_colours_are_hex_apple_accepts(colour):
-    """PassKit takes `#rrggbb` or `rgb(...)`; the library passes ours through."""
-    assert colour.startswith('#')
-    assert len(colour) == 7
-    int(colour[1:], 16)
+# -- what belongs to one registration -----------------------------------------
+
+def test_registration_values_are_substituted(built, style):
+    written = fields_of(built, style)
+    assert written['event']['value'] == TICKET.title
+    assert written['holder']['value'] == TICKET.holder
+    assert written['venue']['value'] == TICKET.venue
+    assert written['registration']['value'] == '#7'
 
 
-class TestImages:
-    def test_ships_a_logo_and_an_icon(self):
-        """Both are load-bearing.
+def test_the_primary_caption_is_the_template_s_for_every_category():
+    """One caption whatever the event is -- a lecture and a meetup read alike.
 
-        Without the logo a pass falls back to whatever `WALLET_LOGO_URL` points
-        at, which on a light pass is usually the white lockup and therefore
-        nothing; without the icon it is not a valid pass at all.
-        """
-        found = images()
-
-        assert 'logo.png' in found
-        assert 'icon.png' in found
-        assert all(data for data in found.values())
-
-    def test_every_name_is_one_apple_looks_for(self):
-        """A file under a name Apple does not know is dead weight in the pass.
-
-        `strip.png` in particular is not merely unused: supplying one makes
-        Wallet render the event title in white rather than in `foregroundColor`,
-        which on a light pass is a title nobody can read.
-        """
-        for name in IMAGE_NAMES:
-            stem = name.removesuffix('.png').split('@')[0]
-            assert stem in {'logo', 'icon'}
-
-    def test_attaches_them_where_indico_puts_its_own(self):
-        passfile = styled(FakePass())
-
-        assert 'logo.png' in passfile._files
-        assert passfile._files['logo.png'].startswith(b'\x89PNG')
-
-    def test_a_pass_without_the_files_dict_still_gets_its_colours(self):
-        """`_files` is a private attribute of a third-party library.
-
-        If it is ever renamed, a pass in Indico's blue is the right outcome and
-        an exception during a ticket download is not.
-        """
-        class Older(FakePass):
-            def __init__(self):
-                super().__init__()
-                del self._files
-
-        result = styled(Older())
-
-        assert result.backgroundColor == PARCHMENT
-        assert not hasattr(result, '_files')
-
-
-def test_captions_the_barcode():
-    """Wallet's only text slot under the QR is the barcode's `altText`.
-
-    Indico leaves it empty and the check-in code is a UUID nobody would read
-    aloud, so the space carries the instruction instead.
+    The value is substituted and the label deliberately is not, so recaptioning
+    the ticket stays a Pass Designer edit.
     """
-    assert styled(FakePass()).barcode.altText == PASS_BARCODE_CAPTION
-    # English only: Wallet sets it at one small size beside Latin field
-    # values, and a mixed-script line there gives the pass two type colours.
-    assert PASS_BARCODE_CAPTION.isascii()
+    built = pass_json(TICKET, IDENTITY)
+    style = style_key(template())
+    field = fields_of(built, style)['event']
+    assert field['value'] == TICKET.title
+    assert field['label'] == fields_of(template(), style)['event']['label']
 
 
-def test_a_pass_without_a_barcode_is_left_alone():
-    """Captioning a barcode that is not there would be inventing one."""
-    class NoBarcode(FakePass):
+def test_date_and_time_share_one_header_field(built, style):
+    """The header draws one field, so both have to ride on it.
+
+    Wallet formats a real date for the member's locale given a style, which is
+    why the value stays ISO and the styling stays in the template -- and why
+    there is no second field for the time: nothing would draw it.
+    """
+    written = fields_of(built, style)
+    assert written['time']['value'] == TICKET.start
+    assert written['time']['dateStyle'] == 'PKDateStyleMedium'
+    assert written['time']['timeStyle'] == 'PKDateStyleShort'
+    assert 'date' not in written
+
+
+def test_identity_overrides_whatever_the_template_was_saved_with(built):
+    """The template carries a proposal; the certificate carries the truth.
+
+    A pass whose `passTypeIdentifier` disagrees with the signature is one iOS
+    refuses with nothing but "cannot install" to go on.
+    """
+    for key, value in IDENTITY.items():
+        assert built[key] == value
+
+
+def test_an_event_with_no_venue_drops_the_row(design, style):
+    """Rather than shipping a labelled blank, which reads as a mistake."""
+    bare = pass_json(replace(TICKET, venue=None, venue_name=None, room_name=None),
+                     IDENTITY, design)
+    assert 'venue' not in fields_of(bare, style)
+    assert 'venueName' not in bare['semantics']
+
+
+# -- hygiene ------------------------------------------------------------------
+
+def test_preferred_style_schemes_is_stripped(built, design):
+    """Pass Designer writes `posterEventTicket` back on every save.
+
+    That is the scheme limited to NFC-enabled passes, which wants an entitlement
+    Apple issues case by case -- and asking for it while the style key says
+    `posterGeneric` is incoherent besides.  Deleting it from the template does
+    not stick, so it is removed here instead.
+
+    The first assertion is deliberate: if the template ever stops carrying the
+    key, the second one stops proving anything.
+    """
+    assert 'preferredStyleSchemes' in design, 'template no longer carries it -- this test is now vacuous'
+    assert 'preferredStyleSchemes' not in built
+
+
+def test_designer_bookkeeping_does_not_ship(built, style):
+    """`_id` is how Pass Designer tracks a field between saves."""
+    assert not any('_id' in field for field in fields_of(built, style).values())
+
+
+def test_the_barcode_is_the_plural_form(built):
+    """`barcode` singular is deprecated; `barcodes` is what Wallet reads now.
+
+    `wallet-py3k` only emits the singular, which is one of the reasons the whole
+    of pass.json is replaced rather than a few attributes set.
+    """
+    assert 'barcode' not in built
+    assert built['barcodes'][0]['message'] == TICKET.qr_message
+    assert built['barcodes'][0]['format'] == 'PKBarcodeFormatQR'
+
+
+def test_the_barcode_caption_is_the_ticket_number(built):
+    """Wallet has exactly one text slot under the code.  Indico leaves it empty;
+    the ticket number is what a door asks for when a scanner will not read."""
+    assert built['barcodes'][0]['altText'] == '#7'
+
+
+def test_sample_coordinates_do_not_ship(built):
+    """The template's are its sample event's, and Indico holds no latitude or
+    longitude for a real one.  A pass claiming every event happens at one park
+    would wake on the Lock Screen in the wrong place."""
+    assert 'locations' not in built
+    assert 'venueLocation' not in built['semantics']
+
+
+def test_empty_semantic_tags_do_not_ship(built):
+    """Pass Designer leaves empty collections behind for slots it offers and the
+    design does not use.  An empty tag says nothing."""
+    assert all(value not in (None, '', [], {}) for value in built['semantics'].values())
+
+
+def test_semantics_describe_this_event(built):
+    assert built['semantics']['eventName'] == TICKET.title
+    assert built['semantics']['eventStartDate'] == TICKET.start
+    assert built['semantics']['venueRoom'] == TICKET.room_name
+
+
+def test_a_ticket_outlives_its_event(built):
+    """`RHTicketDownload`'s four access checks say nothing about the date, so a
+    pass for an event already attended is a record worth keeping."""
+    assert 'expirationDate' not in built
+    assert 'voided' not in built
+
+
+# -- the artwork --------------------------------------------------------------
+
+def test_the_template_ships_its_own_images():
+    found = images()
+    assert {'icon@2x.png', 'icon@3x.png', 'artwork@2x.png', 'primaryLogo@2x.png'} <= found.keys()
+    assert 'pass.json' not in found
+
+
+def test_an_unscaled_icon_is_synthesised():
+    """A pass without `icon.png` is invalid, and Pass Designer exports no 1x."""
+    found = images()
+    assert found['icon.png'] == found[ICON_FALLBACK]
+
+
+def test_localisations_ship_under_their_directory():
+    """`.lproj` entries keep their path inside the bundle, which is how Wallet
+    finds the strings for the member's own language."""
+    found = images()
+    assert {'en.lproj/pass.strings', 'zh-Hant.lproj/pass.strings'} <= found.keys()
+
+
+# -- applying it to a real pass object ----------------------------------------
+
+def test_styled_replaces_indico_s_images():
+    """Core fetches its logo over HTTP before this runs, and substitutes
+    *Indico's* mark when the fetch fails.  Neither belongs on an STSA pass."""
+    result = styled(FakePass(), TICKET)
+    assert result._files['icon.png'] != b'indico'
+    assert 'artwork@2x.png' in result._files
+
+
+def test_styled_installs_the_pass_json(built):
+    """`PassHandler` calls `json_dict()` if it exists, so what it returns is
+    pass.json -- that is the whole of how the whitelist is worked around."""
+    result = styled(FakePass(), TICKET)
+    assert result.json_dict() == built
+
+
+def test_styled_survives_a_pass_without_files():
+    """`_files` is a private attribute of a third-party library.  A pass that
+    keeps Indico's images is a working ticket; an exception here is a download
+    that fails."""
+    class Bare:
         def __init__(self):
-            super().__init__()
-            del self.barcode
+            self.passTypeIdentifier = self.teamIdentifier = self.serialNumber = 'x'
 
-    assert not hasattr(styled(NoBarcode()), 'barcode')
-
-
-class FakeField:
-    """`wallet.models.Field`: the three things core sets and the one we set."""
-
-    def __init__(self, key, value, label=''):
-        self.key = key
-        self.value = value
-        self.label = label
-        self.textAlignment = 'PKTextAlignmentLeft'
+    bare = Bare()
+    styled(bare, TICKET)
+    assert bare.json_dict()['description']
 
 
-class FakeTicket:
-    """Core's `EventTicket`, with exactly the fields `build_ticket_object` writes."""
+def test_the_serialiser_emits_what_we_built(built):
+    """The library this works around, driven for real rather than reasoned about.
 
-    def __init__(self):
-        self.headerFields = []
-        self.primaryFields = [FakeField('event-title', '2026 STSA Boba Chat', 'Event')]
-        self.secondaryFields = [FakeField('event-date', '30 Aug 2026, 13:00', 'Date'),
-                                FakeField('event-venue', 'Wushiland Boba', 'Venue')]
-        self.auxiliaryFields = [FakeField('registration-name', '楊晨諺', 'Name'),
-                                FakeField('registration-email', 'member@u.nus.edu', 'Email')]
-        self.backFields = [FakeField('back-registration-email', 'member@u.nus.edu', 'Email'),
-                           FakeField('back-ticket-number', '#1042', 'Ticket number')]
+    Skipped where `wallet-py3k` is absent: it is Indico's dependency, not ours,
+    so a checkout without Indico installed has no copy of it.
+    """
+    models = pytest.importorskip('wallet.models')
+    # The same identity `built` was made with: `styled` reads it off the pass
+    # object, so a fake carrying different ids would differ for an uninteresting
+    # reason and hide whether the serialiser kept everything else.
+    passfile = models.Pass(models.EventTicket(),
+                           passTypeIdentifier=IDENTITY['passTypeIdentifier'],
+                           organizationName='y',
+                           teamIdentifier=IDENTITY['teamIdentifier'])
+    passfile.serialNumber = IDENTITY['serialNumber']
+    styled(passfile, TICKET)
+    emitted = json.loads(passfile._createPassJson().decode())
 
-
-def keys(fields):
-    return [field.key for field in fields]
-
-
-class TestRefined:
-    def test_takes_the_email_off_the_front_and_leaves_it_on_the_back(self):
-        """A pass is readable from a locked phone; an address is not a ticket's
-        business to show. Core also keeps it on the back, so nothing is lost."""
-        ticket = refined(FakeTicket())
-
-        assert 'registration-email' not in keys(ticket.auxiliaryFields)
-        assert 'back-registration-email' in keys(ticket.backFields)
-
-    def test_relabels_with_our_words_and_nothing_else(self):
-        ticket = refined(FakeTicket())
-
-        assert ticket.primaryFields[0].label == PASS_FIELD_LABELS['event-title']
-        assert ticket.auxiliaryFields[0].label == PASS_FIELD_LABELS['registration-name']
-        # A key we have no word for keeps core's.
-        assert ticket.backFields[0].label == 'Email'
-
-    def test_labels_are_english(self):
-        """Typographic, not linguistic: Wallet sets every label at one small
-        size, and a mixed-script label there gives the pass two type colours."""
-        assert all(label.isascii() for label in PASS_FIELD_LABELS.values())
-        assert PASS_HEADER_LABEL.isascii()
-
-    def test_brings_the_ticket_number_forward_into_the_header(self):
-        """The header is what Wallet shows while passes are stacked -- the one
-        line a member sees without opening anything."""
-        ticket = refined(FakeTicket())
-
-        assert len(ticket.headerFields) == 1
-        assert ticket.headerFields[0].value == '#1042'
-        assert ticket.headerFields[0].label == PASS_HEADER_LABEL
-        # Forward, not duplicated: it was once in the holder's row as well, and
-        # the same number twice on one small card read worse than the gap.
-        assert '#1042' not in [field.value for field in ticket.auxiliaryFields]
-
-    def test_is_idempotent(self):
-        """Core may fire the signal more than once for one pass."""
-        ticket = refined(refined(FakeTicket()))
-
-        assert len(ticket.headerFields) == 1
-        assert keys(ticket.auxiliaryFields) == ['registration-name']
-
-    def test_a_ticket_with_no_number_on_the_back_gets_no_header(self):
-        ticket = FakeTicket()
-        ticket.backFields = [field for field in ticket.backFields if field.key != 'back-ticket-number']
-
-        assert refined(ticket).headerFields == []
-
-    def test_right_aligns_the_second_column_only(self):
-        """Two columns with an edge each, instead of both ragging right. A row
-        with one field has nothing to align against and is left alone."""
-        ticket = refined(FakeTicket())
-
-        assert ticket.secondaryFields[0].textAlignment == 'PKTextAlignmentLeft'
-        assert ticket.secondaryFields[1].textAlignment == ALIGN_RIGHT
-        assert ticket.auxiliaryFields[0].textAlignment == 'PKTextAlignmentLeft'
-
-    def test_returns_the_same_object(self):
-        ticket = FakeTicket()
-        assert refined(ticket) is ticket
+    assert emitted == built
+    # The keys the whitelist would otherwise have dropped.
+    assert 'semantics' in emitted
+    assert 'sharingProhibited' in emitted
+    assert style_key(emitted) != 'eventTicket'

@@ -1,0 +1,137 @@
+{
+  "backgroundColor" : "rgb(69,132,215)",
+  "barcodes" : [
+    {
+      "_id" : "8C4A6A2E-6B8C-4F0E-9A1D-2C7F5B3E9A11",
+      "altText" : "#42",
+      "format" : "PKBarcodeFormatQR",
+      "message" : "{\"i\":[2,\"event.stsa.tw\",\"AAAAAAAAQACAAAAAAAAAAg==\"]}",
+      "messageEncoding" : "iso-8859-1"
+    }
+  ],
+  "description" : "STSA 活動票券",
+  "foregroundColor" : "rgb(255,255,255)",
+  "formatVersion" : 1,
+  "labelColor" : "rgb(255,255,255)",
+  "locations" : [
+    {
+      "latitude" : 1.301,
+      "longitude" : 103.912,
+      "relevantText" : "出示 QR code 入場"
+    }
+  ],
+  "logoText" : "STSA",
+  "organizationName" : "新加坡台灣學生總會",
+  "passTypeIdentifier" : "pass.tw.stsa.event",
+  "posterGeneric" : {
+    "backFields" : [
+      {
+        "_id" : "3A5E9C17-8D60-4B2F-91C4-6E0A7B3D5F82",
+        "key" : "registration",
+        "label" : "報名編號",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "value" : "#42"
+      },
+      {
+        "_id" : "B81C4F6D-2A93-4E07-85B1-0D7C9E4A6F35",
+        "dateStyle" : "PKDateStyleMedium",
+        "key" : "ends",
+        "label" : "結束",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "timeStyle" : "PKDateStyleShort",
+        "value" : "2026-09-19T13:00:00Z"
+      },
+      {
+        "_id" : "0F6D2B84-7A19-4C53-A8E0-1B4F9D6C2E75",
+        "key" : "venue",
+        "label" : "地點",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "value" : "East Coast Park · Area E & F"
+      },
+      {
+        "_id" : "5D0A8E23-6C41-4F95-B7E8-3A1F2C9D0B64",
+        "key" : "address",
+        "label" : "地址",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "value" : "920 East Coast Parkway, Singapore 449875"
+      },
+      {
+        "_id" : "9E2F7B50-1D84-4A63-8C09-5B6E3A0F7D21",
+        "key" : "organiser",
+        "label" : "主辦",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "value" : "新加坡台灣學生總會 STSA"
+      },
+      {
+        "_id" : "C60B3D9F-4E28-4157-A9D6-8F0C2B7E1A43",
+        "key" : "eventPage",
+        "label" : "活動頁",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "value" : "https://event.stsa.tw/event/0/"
+      },
+      {
+        "_id" : "47A1E6C8-5B03-49DF-8260-1C9E4A7B3F05",
+        "key" : "notice",
+        "label" : "注意事項",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "value" : "入場時出示這張票的 QR code。票券在活動結束後仍然有效，可以留著當作紀錄。"
+      },
+      {
+        "_id" : "8E020BFD-F1ED-4A27-97E1-9D229DA89792",
+        "key" : "說明",
+        "value" : "活動報到時請向幹部出示此票券，謝謝！"
+      }
+    ],
+    "footerFields" : [
+      {
+        "_id" : "62C8F0A5-3E71-4D96-8B24-9F5E0A7C3D18",
+        "key" : "holder",
+        "label" : "持票人",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "value" : "王小明"
+      }
+    ],
+    "headerFields" : [
+      {
+        "_id" : "D4B9E7A1-0C35-4F82-9E6B-7A1D3C8F5B04",
+        "dateStyle" : "PKDateStyleMedium",
+        "key" : "time",
+        "label" : "時間",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "timeStyle" : "PKDateStyleShort",
+        "value" : "2026-09-19T09:30:00Z"
+      }
+    ],
+    "primaryFields" : [
+      {
+        "_id" : "A7F31D08-42C6-4B19-B0E7-5D8A9C1F6E23",
+        "key" : "event",
+        "label" : "活動",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "value" : "2026 STSA 烤場集合"
+      }
+    ]
+  },
+  "preferredStyleSchemes" : [
+    "posterEventTicket"
+  ],
+  "relevantDate" : "2026-09-19T09:30:00Z",
+  "semantics" : {
+    "eventEndDate" : "2026-09-19T13:00:00Z",
+    "eventName" : "2026 STSA 烤場集合",
+    "eventStartDate" : "2026-09-19T09:30:00Z",
+    "eventType" : "PKEventTypeGeneric",
+    "seats" : [],
+    "venueLocation" : {
+      "latitude" : 1.301,
+      "longitude" : 103.912
+    },
+    "venueName" : "East Coast Park",
+    "venueRoom" : "Area E & F"
+  },
+  "serialNumber" : "00000000-0000-4000-8000-000000000002",
+  "sharingProhibited" : true,
+  "suppressHeaderDarkening" : false,
+  "teamIdentifier" : "FJX3SGU9AL",
+  "useAutomaticColors" : false
+}

@@ -379,130 +379,117 @@ looks broken.
 
 ## 6. The Apple Wallet pass
 
-Indico builds the pass and paints it `#007cac`, its own blue, hardcoded in
-`AppleWalletManager.build_pass_object`. This repaints it — ink on parchment,
-the association's red on the labels, the emblem where the logo goes — and tidies
-what is on it.
+Indico builds and signs the `.pkpass` itself — that is core, not a plugin — and
+paints it `#007cac`, its own blue, hardcoded in
+`AppleWalletManager.build_pass_object`. Its five fields are hardcoded too. This
+replaces the whole of it with a design you edit in **Xcode's Pass Designer**.
 
-```
- ┌────────────────────────────────┐
- │ ◉ emblem            TICKET     │  the header field: what a stack shows
- │                     #1042      │
- │ EVENT                          │  labels #8A2424, the association's red
- │ 2026 STSA Boba Chat            │  values #1C2733, ink
- │ DATE             VENUE         │  second column right-aligned
- │ ATTENDEE                       │
- │            ▣ QR                │
- │       Show at check-in         │  the barcode's altText
- └────────────────────────────────┘  ground #F4F1EE
-```
+The design lives in `indico_stsa/EventTicket.pkpasstemplate/`, a Pass Designer
+bundle you can open directly: `pass.json`, the artwork, and the `.lproj` strings. `wallet_pass.py`
+starts from that file and substitutes only what belongs to one registration —
+the field values, the barcode, the dates, and the identity keys that have to
+match the certificate. Labels, colours, the style key and the static copy are
+quoted verbatim, so **changing how the pass looks is a Pass Designer job and not
+a commit**.
 
-### The line under the barcode
+### The layout is `posterGeneric`
 
-Wallet has exactly one text slot there — the barcode's `altText`, meant to carry
-the code in readable form so a broken scanner is not a dead end. Indico leaves it
-empty, and an STSA check-in code is a UUID nobody would read aloud, so the space
-carries the one instruction a ticket needs instead. It also earns its room: the
-barcode panel grows to fit the caption, which takes back some of the space Wallet
-otherwise leaves between the fields and the code.
+A poster pass: artwork full-bleed behind the fields, rather than the classic
+strip-and-fields card. Generic rather than *event ticket*, and that distinction
+is the load-bearing one — Apple limits the poster **event ticket** scheme to
+NFC-enabled passes, which wants an entitlement issued case by case and unlikely
+to be granted to a student association. A poster **generic** pass carries no
+such requirement.
 
-### Where the red goes
+So `wallet_pass.style_key()` reads whichever key the template holds rather than
+naming one: switching the style in Pass Designer renames it, and a hardcoded
+name would silently revert the design to core's `eventTicket`. For the same
+reason `preferredStyleSchemes` is stripped on the way out — Pass Designer writes
+`posterEventTicket` back into the template on every save, and shipping it would
+ask for the entitlement-gated scheme again. A test asserts both halves of that:
+that the template still carries the key, and that the pass never does.
 
-On the labels, not the values. Apple gives a pass three colours and not one per
-field, so red on the values means red on *every* value — the date, the venue,
-the name, all shouting equally. A label is small, repeated and read past, so it
-carries the association's colour without competing with what the member came to
-read. Both were signed and looked at side by side before choosing.
+### Why the whole of pass.json is replaced
 
-### The fields are not core's
+Indico builds passes with `wallet-py3k`, whose `Pass.json_dict()` is a fixed
+whitelist — it emits only the keys it was written to know about. Setting an
+attribute it does not know is silently dropped, which rules out `semantics`,
+`sharingProhibited`, `useAutomaticColors`, the plural `barcodes`, and the style
+key itself, which is always `eventTicket` because that is the class Indico
+instantiates.
 
-`apple_wallet_ticket_object` relabels them and does two other things. The
-**e-mail comes off the front**: a pass is readable from a locked phone, and an
-address is not something a ticket needs to show, so it stays on the back where
-core also puts it. And the **ticket number comes forward** from the back into
-the header, top right — the one line Wallet shows while passes are stacked, so
-it is what a member sees without opening anything.
+Rather than fight that key by key, the pass object is handed a `json_dict` of
+our own. `Pass._createPassJson` calls it through `PassHandler`, so what it
+returns *is* pass.json. `Field.json_dict()` returns `self.__dict__`, so fields
+were never the constraint — only the pass level was.
 
-Labels are English, which is a typographic decision rather than a linguistic
-one: Wallet sets them all at one small size, and a bilingual label puts Chinese
-beside Latin there — two type colours in a caption meant to be read past. A
-member's own name still arrives in whatever script it is written in.
+### What each registration contributes
 
-The logo is the **emblem, in colour**, not the lockup. Apple caps the logo at
-160×50pt; a wordmark that wide arrives as type too small to read, sitting low in
-a box wider than the mark is tall. The emblem is square, fills its 50 points, and
-is left-aligned so it lines up with the fields beneath it.
+`plugin.py` is the only place that knows what a registration looks like; it
+flattens one into a `PassTicket` and `wallet_pass.py` draws from that, which is
+what keeps the module free of Indico and testable without an instance.
 
-### What a pass can and cannot be
+| Pass field | From |
+| --- | --- |
+| header `time` | `event.start_dt_local` — the event's timezone, so the pass shows the hour the organiser announced. Date and time on one field, because the header draws only one |
+| primary `event` | the title. The caption is the template's — one word for every category, rather than the event's kind |
+| footer `holder` | `registration.full_name` |
+| back `registration` | `#{friendly_id}` |
+| back `venue` | `venue_name · room_name`, dropped entirely when the event has neither |
+| back `organiser`, `notice`, `說明` | static copy, quoted from the template |
+| `barcodes[0]` | `get_ticket_qr_code_data`, so the QR matches the printed ticket byte for byte |
+| `altText` | the ticket number — the one text slot Wallet gives you under the code, for a door that has to look somebody up when the scanner will not read |
 
-Three colours, a logo, an icon, and fields Apple lays out itself. There is no
-typeface to choose, nowhere to put an icon beside a field, no rules and no
-bands. A pass takes a *palette*, not a design — the design is the printed 門票
-above, and this is that design reduced to what a `.pkpass` can carry.
+**The face has exactly three lines, and that is not a style choice.**
+`posterGeneric` draws the *first* entry of `headerFields`, `primaryFields` and
+`footerFields` and nothing after it; `secondaryFields` and `auxiliaryFields` it
+ignores completely. None of that is documented — it was settled by signing real
+passes and looking, after the holder sat in `secondaryFields` and never once
+appeared on a ticket. `backFields` draws all of its entries, so everything that
+does not fit the three face slots lives there.
 
-One consequence worth knowing before changing anything: `foregroundColor` is one
-colour for **every** value. A design with a red headline and near-black details
-cannot be expressed; it is all red or all near-black.
+Three things are deliberately absent. **No `expirationDate` and no `voided`:**
+`RHTicketDownload`'s four access checks say nothing about the date, so a ticket
+outlives its event and one already attended is a record worth keeping.
+**`sharingProhibited` is on**, because a ticket QR *is* the credential — whoever
+holds it can be checked in as that member. And **`locations` is dropped**: the
+template carries its sample event's coordinates, Indico holds none for a real
+one, and a pass claiming every event happens at one park would wake on the Lock
+Screen in the wrong place.
 
-### Why the images ship
+### The images ship with the template
 
-Core takes `logo.png` and `icon.png` from `WALLET_LOGO_URL`, one URL for the
-whole instance, pointing at whichever mark was chosen for Indico's blue. On a
-parchment pass the white lockup arrives as a white mark on a light field —
-invisible, and invisible in a way no code could detect. So
-`scripts/build-wallet-artwork.py` renders the emblem — as the logo and as the
-icon — from the marks in `static/brand/`, and it ships in the wheel.
+Core takes `logo.png` and `icon.png` from `WALLET_LOGO_URL` — one URL for the
+whole instance — and fetches them over HTTP, a round trip from Indico to itself
+per image, substituting *Indico's* logo when a fetch fails. These are read off
+disk instead and attached through `Pass._files`, which is a private attribute of
+a third-party library and so is touched defensively: no dict, no images, and a
+pass that still carries its design.
 
-They are attached by writing into `Pass._files`, which is where `IndicoPass`'s
-own `add_file_from_url` puts them. That method was the obvious route and is the
-wrong one twice over: it fetches over HTTP, so a pass would cost three round
-trips from Indico to itself, and **when a fetch fails it substitutes Indico's
-logo** — worse than no image. Reading a file that shipped in the wheel cannot
-fail that way. `_files` is private to a third-party library, so it is touched
-defensively: no dict, no images, and a pass that still has its colours.
+`.lproj` entries keep their path inside the bundle, which is how Wallet finds
+the labels for a member whose phone is not in English.
 
-### Why there is no strip, thumbnail or footer
+### Seeing it
 
-All three were tried on a signed pass. A `strip.png` is how a pass gets a band
-across its top, and **with one present Wallet renders the event title in white**
-rather than in `foregroundColor`, because it assumes the strip behind the title
-is dark — on parchment, a title nobody can read. A `thumbnail.png` renders the
-emblem beside the title and takes its width from the second column, until the
-date and the venue touch. A `footer.png` is silently ignored on an event ticket.
-
-Nothing about the pass format says any of this, and no drawing predicts it — the
-mock-up rendered the title in the colour it was given. This is the reason
-`sign-preview-pass.py` exists.
-
-### Seeing it before issuing one
-
-Two ways, and they answer different questions.
-
-```bash
-python scripts/preview-wallet-pass.py       # a drawing of the pass
-```
-
-Renders the front from the same constants the plugin paints it with, so the
-picture cannot drift from what ships. It is a mock-up: Apple's metrics are not
-published, so it answers "do these colours work", not "where exactly will that
-word sit".
+Nothing drawn in Python stands in for this: iOS refuses an unsigned pass, in the
+Simulator as much as on a phone. Build a real one —
 
 ```bash
 pip install wallet-py3k cryptography
-python scripts/sign-preview-pass.py --certificate cert.pem --key key.pem
+python scripts/sign-preview-pass.py \
+    --certificate ~/pass-cert.pem --key ~/pass-key.pem --password secret
 ```
 
-Builds and signs a real `.pkpass`. AirDrop it to a phone, or drag it onto a
-booted simulator, and Wallet renders it exactly as it will for a member —
-because it *is* a pass. **Deploying the plugin is not needed for this; the
-certificate is.** iOS refuses unsigned passes everywhere, including the
-Simulator, which is why no drawing can stand in for one.
+— then AirDrop it to yourself, or drag it onto a booted simulator. Deploying the
+plugin is not required; the certificate is, and it is the same PEM pair
+configured on the Indico category under Apple Wallet. **The key is read from the
+path given and never stored.**
 
-The key is read from the path given and never stored, and `*.pem`, `*.p12` and
-`*.pkpass` are gitignored so neither it nor a signed pass can reach a commit.
-The same PEM blocks are on the Indico category under Apple Wallet. To try a
-colour before committing it, `--background`, `--foreground` and `--label` take
-a hex each and override the palette for that one pass.
+The whole design can be switched off with `wallet_pass_design`, and both the
+handler and every failure inside it are caught: this runs while a participant is
+downloading their ticket, so an exception would turn a working pass into an
+error page. Indico's blue pass is a perfectly good ticket, and that is what a
+failure leaves behind.
 
 ## 7. Payment reminders
 

@@ -42,11 +42,17 @@ REQUIRED_FILES = [
     f'{PKG}/static/ticket/background.png',
     f'{PKG}/static/brand/logo-white.png',
     f'{PKG}/static/brand/emblem.png',
-    # The Apple Wallet pass. Without its logo a pass falls back to whatever
-    # WALLET_LOGO_URL points at, which on a light pass is usually invisible;
-    # without an icon it is not a valid pass at all.
-    f'{PKG}/static/wallet/pass/logo.png',
-    f'{PKG}/static/wallet/pass/icon.png',
+    # The Apple Wallet pass is the Pass Designer bundle, whole: pass.json *is*
+    # the design, and a wheel without it raises on the first ticket download.
+    # Without the icon a pass is not valid at all; without the artwork the
+    # poster layout has no face.
+    f'{PKG}/EventTicket.pkpasstemplate/pass.json',
+    f'{PKG}/EventTicket.pkpasstemplate/icon@2x.png',
+    f'{PKG}/EventTicket.pkpasstemplate/artwork@2x.png',
+    f'{PKG}/EventTicket.pkpasstemplate/primaryLogo@2x.png',
+    # Wallet reads these for a member whose phone is not in English.
+    f'{PKG}/EventTicket.pkpasstemplate/en.lproj/pass.strings',
+    f'{PKG}/EventTicket.pkpasstemplate/zh-Hant.lproj/pass.strings',
     # Without this a ticket whose title has an emoji prints a crossed box.
     f'{PKG}/static/fonts/NotoEmoji.ttf',
     f'{PKG}/static/fonts/OFL.txt',

@@ -38,3 +38,5 @@ preview/
 *.pem
 *.p12
 *.pkpass
+
+.DS_Store
