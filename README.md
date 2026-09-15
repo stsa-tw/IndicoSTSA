@@ -431,14 +431,22 @@ what keeps the module free of Indico and testable without an instance.
 
 | Pass field | From |
 | --- | --- |
-| header `time`, secondary `date` | `event.start_dt_local` — the event's timezone, so the pass shows the hour the organiser announced |
+| header `time` | `event.start_dt_local` — the event's timezone, so the pass shows the hour the organiser announced. Date and time on one field, because the header draws only one |
 | primary `event` | the title, labelled with the event's kind (活動 / 聚會 / 講座) |
-| secondary `holder` | `registration.full_name` |
-| auxiliary `venue` | `venue_name · room_name`, dropped entirely when the event has neither |
+| footer `holder` | `registration.full_name` |
 | back `registration` | `#{friendly_id}` |
-| back `organiser`, `notice` | static copy, quoted from the template |
+| back `venue` | `venue_name · room_name`, dropped entirely when the event has neither |
+| back `organiser`, `notice`, `說明` | static copy, quoted from the template |
 | `barcodes[0]` | `get_ticket_qr_code_data`, so the QR matches the printed ticket byte for byte |
 | `altText` | the ticket number — the one text slot Wallet gives you under the code, for a door that has to look somebody up when the scanner will not read |
+
+**The face has exactly three lines, and that is not a style choice.**
+`posterGeneric` draws the *first* entry of `headerFields`, `primaryFields` and
+`footerFields` and nothing after it; `secondaryFields` and `auxiliaryFields` it
+ignores completely. None of that is documented — it was settled by signing real
+passes and looking, after the holder sat in `secondaryFields` and never once
+appeared on a ticket. `backFields` draws all of its entries, so everything that
+does not fit the three face slots lives there.
 
 Three things are deliberately absent. **No `expirationDate` and no `voided`:**
 `RHTicketDownload`'s four access checks say nothing about the date, so a ticket

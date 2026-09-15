@@ -37,6 +37,22 @@ reason `preferredStyleSchemes` is stripped: Pass Designer writes
 `posterEventTicket` back into the template on every save, and shipping it would
 ask for the entitlement-gated scheme again.
 
+**One field per bucket is all the face draws.**  Settled by signing real
+passes and looking at them, because none of it is documented and no amount of
+reading predicted it: `posterGeneric` renders `headerFields[0]`,
+`primaryFields[0]` and `footerFields[0]` -- the *first* entry of each, and
+nothing after it.  A second entry in a bucket is a field nobody will ever see.
+
+* `secondaryFields` and `auxiliaryFields` are **not drawn at all**.  The holder
+  sat in `secondaryFields` for a while and simply never appeared on a ticket.
+* `backFields` is the exception and draws all of them, so anything that does
+  not fit the three face slots belongs there.
+* That leaves the face with exactly three lines of text plus the barcode's
+  `altText`, and the template spends them on when, what, and who.
+
+Date and time therefore share one field rather than taking two: `dateStyle`
+and `timeStyle` on a single entry get both onto the one line the header draws.
+
 **The images ship with the template.**  Core takes `logo.png` and `icon.png`
 from `WALLET_LOGO_URL`, one URL for the whole instance, and fetches them over
 HTTP -- a round trip from Indico to itself per image, substituting *Indico's*

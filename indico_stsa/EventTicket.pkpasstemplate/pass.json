@@ -24,15 +24,6 @@
   "organizationName" : "新加坡台灣學生總會",
   "passTypeIdentifier" : "pass.tw.stsa.event",
   "posterGeneric" : {
-    "auxiliaryFields" : [
-      {
-        "_id" : "0F6D2B84-7A19-4C53-A8E0-1B4F9D6C2E75",
-        "key" : "venue",
-        "label" : "地點",
-        "textAlignment" : "PKTextAlignmentNatural",
-        "value" : "East Coast Park · Area E & F"
-      }
-    ],
     "backFields" : [
       {
         "_id" : "3A5E9C17-8D60-4B2F-91C4-6E0A7B3D5F82",
@@ -49,6 +40,13 @@
         "textAlignment" : "PKTextAlignmentNatural",
         "timeStyle" : "PKDateStyleShort",
         "value" : "2026-09-19T13:00:00Z"
+      },
+      {
+        "_id" : "0F6D2B84-7A19-4C53-A8E0-1B4F9D6C2E75",
+        "key" : "venue",
+        "label" : "地點",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "value" : "East Coast Park · Area E & F"
       },
       {
         "_id" : "5D0A8E23-6C41-4F95-B7E8-3A1F2C9D0B64",
@@ -69,7 +67,7 @@
         "key" : "eventPage",
         "label" : "活動頁",
         "textAlignment" : "PKTextAlignmentNatural",
-        "value" : "https:\/\/event.stsa.tw\/event\/0\/"
+        "value" : "https://event.stsa.tw/event/0/"
       },
       {
         "_id" : "47A1E6C8-5B03-49DF-8260-1C9E4A7B3F05",
@@ -77,19 +75,26 @@
         "label" : "注意事項",
         "textAlignment" : "PKTextAlignmentNatural",
         "value" : "入場時出示這張票的 QR code。票券在活動結束後仍然有效，可以留著當作紀錄。"
-      }
-    ],
-    "footerFields" : [
+      },
       {
         "_id" : "8E020BFD-F1ED-4A27-97E1-9D229DA89792",
         "key" : "說明",
         "value" : "活動報到時請向幹部出示此票券，謝謝！"
       }
     ],
+    "footerFields" : [
+      {
+        "_id" : "62C8F0A5-3E71-4D96-8B24-9F5E0A7C3D18",
+        "key" : "holder",
+        "label" : "持票人",
+        "textAlignment" : "PKTextAlignmentNatural",
+        "value" : "王小明"
+      }
+    ],
     "headerFields" : [
       {
-        "_id" : "1E0B5C33-9D42-4A77-8E51-6F2A0C4D7B91",
-        "dateStyle" : "PKDateStyleNone",
+        "_id" : "D4B9E7A1-0C35-4F82-9E6B-7A1D3C8F5B04",
+        "dateStyle" : "PKDateStyleMedium",
         "key" : "time",
         "label" : "時間",
         "textAlignment" : "PKTextAlignmentNatural",
@@ -105,24 +110,6 @@
         "textAlignment" : "PKTextAlignmentNatural",
         "value" : "2026 STSA 烤場集合"
       }
-    ],
-    "secondaryFields" : [
-      {
-        "_id" : "D4B9E7A1-0C35-4F82-9E6B-7A1D3C8F5B04",
-        "dateStyle" : "PKDateStyleMedium",
-        "key" : "date",
-        "label" : "日期",
-        "textAlignment" : "PKTextAlignmentNatural",
-        "timeStyle" : "PKDateStyleNone",
-        "value" : "2026-09-19T09:30:00Z"
-      },
-      {
-        "_id" : "62C8F0A5-3E71-4D96-8B24-9F5E0A7C3D18",
-        "key" : "holder",
-        "label" : "持票人",
-        "textAlignment" : "PKTextAlignmentNatural",
-        "value" : "王小明"
-      }
     ]
   },
   "preferredStyleSchemes" : [
@@ -134,9 +121,7 @@
     "eventName" : "2026 STSA 烤場集合",
     "eventStartDate" : "2026-09-19T09:30:00Z",
     "eventType" : "PKEventTypeGeneric",
-    "seats" : [
-
-    ],
+    "seats" : [],
     "venueLocation" : {
       "latitude" : 1.301,
       "longitude" : 103.912
