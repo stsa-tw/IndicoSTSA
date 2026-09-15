@@ -140,13 +140,18 @@ def test_the_primary_caption_is_the_template_s_for_every_category():
     assert field['label'] == fields_of(template(), style)['event']['label']
 
 
-def test_date_styles_are_the_template_s(built, style):
-    """Wallet formats a date for the member's locale, given a real date and a
-    style.  Which style is a design decision, so it stays in the template."""
+def test_date_and_time_share_one_header_field(built, style):
+    """The header draws one field, so both have to ride on it.
+
+    Wallet formats a real date for the member's locale given a style, which is
+    why the value stays ISO and the styling stays in the template -- and why
+    there is no second field for the time: nothing would draw it.
+    """
     written = fields_of(built, style)
-    assert written['time']['timeStyle'] == 'PKDateStyleShort'
-    assert written['date']['dateStyle'] == 'PKDateStyleMedium'
     assert written['time']['value'] == TICKET.start
+    assert written['time']['dateStyle'] == 'PKDateStyleMedium'
+    assert written['time']['timeStyle'] == 'PKDateStyleShort'
+    assert 'date' not in written
 
 
 def test_identity_overrides_whatever_the_template_was_saved_with(built):
