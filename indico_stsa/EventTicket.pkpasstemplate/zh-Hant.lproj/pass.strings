@@ -1,0 +1,24 @@
+/* The values in pass.json are already Traditional Chinese, so these are
+   identities. They exist so a zh-Hant phone is never handed en.lproj as the
+   only localisation present. */
+
+"STSA 活動票券" = "STSA 活動票券";
+"新加坡台灣學生總會" = "新加坡台灣學生總會";
+"新加坡台灣學生總會 STSA" = "新加坡台灣學生總會 STSA";
+
+/* Field labels */
+"時間" = "時間";
+"日期" = "日期";
+"持票人" = "持票人";
+"地點" = "地點";
+"報名編號" = "報名編號";
+"結束" = "結束";
+"地址" = "地址";
+"主辦" = "主辦";
+"活動頁" = "活動頁";
+"注意事項" = "注意事項";
+
+"活動" = "活動";
+
+"出示 QR code 入場" = "出示 QR code 入場";
+"入場時出示這張票的 QR code。票券在活動結束後仍然有效，可以留著當作紀錄。" = "入場時出示這張票的 QR code。票券在活動結束後仍然有效，可以留著當作紀錄。";

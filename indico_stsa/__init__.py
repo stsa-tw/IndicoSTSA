@@ -12,6 +12,8 @@ Seven things STSA needs that core Indico does not provide:
 * Apple's and Google's own wallet badges in place of Indico's dropdown, on the
   registration page and in the e-mail the ticket arrives with;
 * an STSA ticket design, and a font that can actually draw Chinese on it;
+* an Apple Wallet pass drawn in Xcode's Pass Designer rather than in code, so
+  the saved ticket is edited by opening a file and looking at it;
 * a one-click payment reminder to everybody on a registration form whose fee is
   still outstanding, each mail naming what that person owes;
 * the registration form's e-mail field held to the address on the membership of

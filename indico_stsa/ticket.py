@@ -15,15 +15,8 @@ sheet blank to cut or fold away.
 import re
 
 from indico_stsa import _
+from indico_stsa.constants import FORMOSA, GRAPHITE, INK, PAPER, STRAIT_PALE
 
-
-#: Sampled from the STSA emblem: the merlion half and the bear half.
-STRAIT = '#2F5478'
-FORMOSA = '#8A2424'
-INK = '#1C2733'
-GRAPHITE = '#6B7683'
-PAPER = '#FFFFFF'
-STRAIT_PALE = '#9DB4CC'
 
 WIDTH = 1050
 HEIGHT = 1210

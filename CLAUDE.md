@@ -7,9 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds seven
 independent, default-off customizations for the Singapore Taiwanese Student Association: e-mail
 subject prefixes, a per-registration-form member discount, a members-only gate on group
-registration, the Apple/Google wallet badges, an STSA ticket design with Chinese-capable fonts, a
-one-click payment reminder for everybody who still owes money, and holding a signed-in member's
-registration e-mail to the address on their membership.
+registration, the Apple/Google wallet badges, an STSA ticket design with Chinese-capable fonts, an
+Apple Wallet pass drawn in Xcode's Pass Designer, a one-click payment reminder for everybody who
+still owes money, and holding a signed-in member's registration e-mail to the address on their
+membership.
 
 `README.md` documents *why* almost every design decision was made — read the relevant section before
 changing behaviour, because most of the odd-looking code is deliberate and the rejected alternatives
@@ -39,6 +40,8 @@ Runtime/maintenance:
 indico stsa install-ticket [--no-default] [--dry-run] [--category-id N]
 python scripts/build-ticket-artwork.py                       # regenerate static/ticket/background.png
 python scripts/install-apple-badges.py ~/Downloads/Add-to-Apple-Wallet.zip
+python scripts/sign-preview-pass.py --certificate … --key …   # build a real signed .pkpass
+python scripts/sign-preview-pass.py --certificate c.pem --key k.pem   # sign a real one to open in Wallet
 python .github/scripts/check_wheel.py dist                   # release gate on wheel contents
 ```
 
@@ -64,6 +67,7 @@ all the unit tests**, while their DB-touching counterparts are exercised only ag
 | [group_preview.py](indico_stsa/group_preview.py) — re-quoting the plan picker | `plugin._intercept_submission_data` |
 | [wallet.py](indico_stsa/wallet.py) — locale → artwork | [ticket_email.py](indico_stsa/ticket_email.py) |
 | [ticket.py](indico_stsa/ticket.py) — the design | [install_ticket.py](indico_stsa/install_ticket.py) |
+| [wallet_pass.py](indico_stsa/wallet_pass.py) — the pass's colours, images and fields | `plugin._style_apple_wallet_pass`, `plugin._refine_apple_wallet_ticket` |
 | [reminders.py](indico_stsa/reminders.py) — *who owes*, and what the mail says | [payments.py](indico_stsa/payments.py) — *finding* them |
 | [email_lock.py](indico_stsa/email_lock.py) — *which* field, and *whether* an address is the member's | `util.email_lock_member` — *whom* the lock applies to |
 

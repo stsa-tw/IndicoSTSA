@@ -34,6 +34,8 @@ from indico_stsa.reglist import REGLIST_FILTER_TEMPLATE, hide_internal_columns
 from indico_stsa.ticket_email import add_wallet_badges
 from indico_stsa.util import email_lock_member, get_settings, is_group_login_required, is_group_plugin_installed
 from indico_stsa.wallet import VENDORS, badge_url
+from indico_stsa.wallet_pass import PassTicket
+from indico_stsa.wallet_pass import styled as style_wallet_pass
 
 
 class STSAPlugin(IndicoPlugin):
@@ -67,6 +69,7 @@ class STSAPlugin(IndicoPlugin):
         'rewrite_email_subjects': True,
         'email_subject_prefix': DEFAULT_SUBJECT_PREFIX,
         'wallet_badges': True,
+        'wallet_pass_design': True,
         'cjk_badge_fonts': True,
         'payment_reminders': True,
         'lock_member_email': True,
@@ -144,6 +147,17 @@ class STSAPlugin(IndicoPlugin):
         self.template_hook('html-head', self._wallet_head_meta)
         self.connect(signals.core.before_notification_send, self._before_notification_send,
                      sender='notify-registration')
+
+        # -- the Apple Wallet pass -------------------------------------------
+        #
+        # Core fires these while building a pass, before `passfile.create(...)`
+        # signs anything, so what is set here is what ends up in the member's
+        # Wallet.  There is no other way in: the background colour is a literal
+        # in `build_pass_object`, and a signed pass cannot be repainted
+        # afterwards, by us or by the app.
+        # Only the pass signal: `apple_wallet_ticket_object` hands over the field
+        # objects core built, and the template supersedes all of them.
+        self.connect(signals.event.registration.apple_wallet_object, self._style_apple_wallet_pass)
 
         # -- printed tickets and badges --------------------------------------
         #
@@ -234,6 +248,52 @@ class STSAPlugin(IndicoPlugin):
             if url := badge_url(vendor):
                 tags.append(f'<meta name="stsa-wallet-{vendor}" content="{escape(url)}">')
         return ''.join(tags)
+
+    def _style_apple_wallet_pass(self, registration, obj=None, **kwargs):
+        """Redraw the pass from the Pass Designer template.
+
+        Wrapped like every other handler here, and for a sharper reason than
+        most: this runs while a participant is downloading their ticket, and an
+        exception would turn a working pass into an error page.  Indico's own
+        blue is a perfectly good pass, so that is what a failure leaves behind.
+        """
+        try:
+            if not self.settings.get('wallet_pass_design') or obj is None:
+                return
+            style_wallet_pass(obj, self._pass_ticket(registration))
+        except Exception:
+            self.logger.exception('Could not apply the STSA design to an Apple Wallet pass')
+
+    @staticmethod
+    def _pass_ticket(registration):
+        """Flatten a registration into the strings `wallet_pass` draws with.
+
+        The only place that knows what a registration looks like -- which is
+        what keeps `wallet_pass` free of Indico and testable without one.
+        """
+        # Indico's own call, so the QR stays byte-identical to the one printed
+        # on the ticket PDF and on the member app's ticket screen.
+        from indico.modules.events.registration.util import get_persons, get_ticket_qr_code_data
+
+        event = registration.event
+        qr_data = get_ticket_qr_code_data(get_persons([registration])[0])
+        # `start_dt_local` is core's own `start_dt.astimezone(tzinfo)`: the
+        # event's timezone rather than the server's, so the pass shows the hour
+        # the organiser announced.
+        venue = ' · '.join(p.strip() for p in (event.venue_name, event.room_name) if p and p.strip())
+        return PassTicket(
+            title=event.title,
+                start=event.start_dt_local.replace(microsecond=0).isoformat(),
+            end=event.end_dt_local.replace(microsecond=0).isoformat(),
+            venue=venue or None,
+            venue_name=event.venue_name or None,
+            room_name=event.room_name or None,
+            address=event.address or None,
+            event_url=event.external_url,
+            holder=registration.full_name,
+            friendly_id=str(registration.friendly_id),
+            qr_message=json.dumps(qr_data, separators=(',', ':')),
+        )
 
     def _before_notification_send(self, sender, email=None, registration=None, template_name=None,
                                   to_managers=False, **kwargs):

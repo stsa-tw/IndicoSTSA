@@ -18,6 +18,8 @@ Seven things, each independently switchable:
    in the e-mail the ticket arrives with — and they work without signing in.
 5. **An STSA ticket**, in the association's own colours and marks, with a font
    that can actually draw Chinese.
+6. **STSA colours on the Apple Wallet pass**, so the saved ticket and the
+   printed one belong to the same association.
 6. **Payment reminders.** One button in the registrant list writes to everybody
    whose registration fee is still outstanding, each mail naming what that
    person owes.
@@ -383,7 +385,121 @@ If the font is ever missing, or composing fails, the characters are dropped
 instead. A title reading 秋季迎新晚會 is a small loss; one reading 秋季迎新晚會 ⊠
 looks broken.
 
-## 6. Payment reminders
+## 6. The Apple Wallet pass
+
+Indico builds and signs the `.pkpass` itself — that is core, not a plugin — and
+paints it `#007cac`, its own blue, hardcoded in
+`AppleWalletManager.build_pass_object`. Its five fields are hardcoded too. This
+replaces the whole of it with a design you edit in **Xcode's Pass Designer**.
+
+The design lives in `indico_stsa/EventTicket.pkpasstemplate/`, a Pass Designer
+bundle you can open directly: `pass.json`, the artwork, and the `.lproj` strings. `wallet_pass.py`
+starts from that file and substitutes only what belongs to one registration —
+the field values, the barcode, the dates, and the identity keys that have to
+match the certificate. Labels, colours, the style key and the static copy are
+quoted verbatim, so **changing how the pass looks is a Pass Designer job and not
+a commit**.
+
+### The layout is `posterGeneric`
+
+A poster pass: artwork full-bleed behind the fields, rather than the classic
+strip-and-fields card. Generic rather than *event ticket*, and that distinction
+is the load-bearing one — Apple limits the poster **event ticket** scheme to
+NFC-enabled passes, which wants an entitlement issued case by case and unlikely
+to be granted to a student association. A poster **generic** pass carries no
+such requirement.
+
+So `wallet_pass.style_key()` reads whichever key the template holds rather than
+naming one: switching the style in Pass Designer renames it, and a hardcoded
+name would silently revert the design to core's `eventTicket`. For the same
+reason `preferredStyleSchemes` is stripped on the way out — Pass Designer writes
+`posterEventTicket` back into the template on every save, and shipping it would
+ask for the entitlement-gated scheme again. A test asserts both halves of that:
+that the template still carries the key, and that the pass never does.
+
+### Why the whole of pass.json is replaced
+
+Indico builds passes with `wallet-py3k`, whose `Pass.json_dict()` is a fixed
+whitelist — it emits only the keys it was written to know about. Setting an
+attribute it does not know is silently dropped, which rules out `semantics`,
+`sharingProhibited`, `useAutomaticColors`, the plural `barcodes`, and the style
+key itself, which is always `eventTicket` because that is the class Indico
+instantiates.
+
+Rather than fight that key by key, the pass object is handed a `json_dict` of
+our own. `Pass._createPassJson` calls it through `PassHandler`, so what it
+returns *is* pass.json. `Field.json_dict()` returns `self.__dict__`, so fields
+were never the constraint — only the pass level was.
+
+### What each registration contributes
+
+`plugin.py` is the only place that knows what a registration looks like; it
+flattens one into a `PassTicket` and `wallet_pass.py` draws from that, which is
+what keeps the module free of Indico and testable without an instance.
+
+| Pass field | From |
+| --- | --- |
+| header `time` | `event.start_dt_local` — the event's timezone, so the pass shows the hour the organiser announced. Date and time on one field, because the header draws only one |
+| primary `event` | the title. The caption is the template's — one word for every category, rather than the event's kind |
+| footer `holder` | `registration.full_name` |
+| back `registration` | `#{friendly_id}` |
+| back `venue` | `venue_name · room_name`, dropped entirely when the event has neither |
+| back `organiser`, `notice`, `說明` | static copy, quoted from the template |
+| `barcodes[0]` | `get_ticket_qr_code_data`, so the QR matches the printed ticket byte for byte |
+| `altText` | the ticket number — the one text slot Wallet gives you under the code, for a door that has to look somebody up when the scanner will not read |
+
+**The face has exactly three lines, and that is not a style choice.**
+`posterGeneric` draws the *first* entry of `headerFields`, `primaryFields` and
+`footerFields` and nothing after it; `secondaryFields` and `auxiliaryFields` it
+ignores completely. None of that is documented — it was settled by signing real
+passes and looking, after the holder sat in `secondaryFields` and never once
+appeared on a ticket. `backFields` draws all of its entries, so everything that
+does not fit the three face slots lives there.
+
+Three things are deliberately absent. **No `expirationDate` and no `voided`:**
+`RHTicketDownload`'s four access checks say nothing about the date, so a ticket
+outlives its event and one already attended is a record worth keeping.
+**`sharingProhibited` is on**, because a ticket QR *is* the credential — whoever
+holds it can be checked in as that member. And **`locations` is dropped**: the
+template carries its sample event's coordinates, Indico holds none for a real
+one, and a pass claiming every event happens at one park would wake on the Lock
+Screen in the wrong place.
+
+### The images ship with the template
+
+Core takes `logo.png` and `icon.png` from `WALLET_LOGO_URL` — one URL for the
+whole instance — and fetches them over HTTP, a round trip from Indico to itself
+per image, substituting *Indico's* logo when a fetch fails. These are read off
+disk instead and attached through `Pass._files`, which is a private attribute of
+a third-party library and so is touched defensively: no dict, no images, and a
+pass that still carries its design.
+
+`.lproj` entries keep their path inside the bundle, which is how Wallet finds
+the labels for a member whose phone is not in English.
+
+### Seeing it
+
+Nothing drawn in Python stands in for this: iOS refuses an unsigned pass, in the
+Simulator as much as on a phone. Build a real one —
+
+```bash
+pip install wallet-py3k cryptography
+python scripts/sign-preview-pass.py \
+    --certificate ~/pass-cert.pem --key ~/pass-key.pem --password secret
+```
+
+— then AirDrop it to yourself, or drag it onto a booted simulator. Deploying the
+plugin is not required; the certificate is, and it is the same PEM pair
+configured on the Indico category under Apple Wallet. **The key is read from the
+path given and never stored.**
+
+The whole design can be switched off with `wallet_pass_design`, and both the
+handler and every failure inside it are caught: this runs while a participant is
+downloading their ticket, so an exception would turn a working pass into an
+error page. Indico's blue pass is a perfectly good ticket, and that is what a
+failure leaves behind.
+
+## 7. Payment reminders
 
 The registrant list gets a **Remind unpaid (3)** button, next to *Moderation*
 and *Check-in control*. It writes to everybody on that registration form whose
