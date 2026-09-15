@@ -27,6 +27,6 @@ in and "becoming a member" is exactly "signing in".
 from indico.util.i18n import make_bound_gettext
 
 
-__version__ = '0.3.0'
+__version__ = '0.3.1'
 
 _ = make_bound_gettext('stsa')
