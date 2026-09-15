@@ -1,10 +1,10 @@
 """Make `indico_stsa` importable from a script, with or without Indico.
 
-The three scripts beside this one read the plugin's own constants rather than
-keeping a copy of the palette in step by hand.  That means importing the
+The scripts beside this one build from the plugin's own modules rather than
+keeping a second copy of anything in step by hand.  That means importing the
 package, and `indico_stsa/__init__.py` binds a gettext from Indico -- which is
 present on a server and absent on the laptop where somebody is trying to see
-what a colour looks like.
+what a ticket looks like.
 
 Gettext is the only thing the pure modules need from Indico, so when Indico is
 missing it is stubbed with the identity function.  Where Indico *is* installed

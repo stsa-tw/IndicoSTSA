@@ -73,9 +73,9 @@ avoid-escape = true
 [lint.per-file-ignores]
 # a build helper whose whole job is shelling out to Indico's own build script
 'build-assets.py' = ['S404', 'S603']
-# both read the plugin's own constants, so they have to find the package before
-# they can import them -- the alternative is a second copy of the palette kept in
-# step by hand, which is what they exist to prevent
+# it builds the pass from the plugin's own module, so it has to find the package
+# before it can import it -- the alternative is a second copy of the design kept
+# in step by hand, which is what the template exists to prevent
 # N802: `_createSignature` is the library's method name, overridden verbatim
 'scripts/sign-preview-pass.py' = ['E402', 'N802']
 # the plugin must never break an email or a page over a malformed setting
