@@ -28,14 +28,27 @@ instantiates.  So the pass object is handed a `json_dict` of our own;
 `Pass._createPassJson` calls it through `PassHandler`, and what it returns *is*
 pass.json.
 
-**The style key is `posterGeneric`, and it is read rather than assumed.**  The
-poster *event ticket* scheme is limited to NFC-enabled passes, which wants an
-entitlement Apple issues case by case.  A poster *generic* pass does not.
+**The style keys are read rather than assumed, and there is more than one.**
+The poster *event ticket* scheme is limited to NFC-enabled passes, which wants
+an entitlement Apple issues case by case.  A poster *generic* pass does not.
 Switching the style in Pass Designer renames that key, so hard-coding it here
 would quietly undo the thing that keeps this pass issuable.  For the same
 reason `preferredStyleSchemes` is stripped: Pass Designer writes
 `posterEventTicket` back into the template on every save, and shipping it would
 ask for the entitlement-gated scheme again.
+
+**`posterGeneric` needs iOS 27.**  An iPhone on 26 cannot draw it, and Apple's
+answer is not a second pass but a second style *dictionary* in the same
+pass.json -- the classic `generic` alongside the poster one, each with its own
+fields, and Wallet draws the newest it understands.  Everything they share
+(the barcode, the colours, `semantics`, the serial) is top-level and written
+once.
+
+So this module fills in **every** style it finds rather than the first.  That
+is not tidiness: a style left holding the template's values is a style that
+ships, and it would hand 王小明 and `#42` to whoever an iPhone on 26 drew it
+for -- a real ticket, with the wrong name on it.  Which style is the fallback
+is a Pass Designer decision; nothing here needs to know.
 
 **One field per bucket is all the face draws.**  Settled by signing real
 passes and looking at them, because none of it is documented and no amount of
@@ -50,8 +63,30 @@ nothing after it.  A second entry in a bucket is a field nobody will ever see.
 * That leaves the face with exactly three lines of text plus the barcode's
   `altText`, and the template spends them on when, what, and who.
 
-Date and time therefore share one field rather than taking two: `dateStyle`
-and `timeStyle` on a single entry get both onto the one line the header draws.
+That rule is the *poster* layout's, and a classic fallback style does not share
+it -- `generic` draws `secondaryFields` and `auxiliaryFields` and has no
+`footerFields` at all, so the same ticket is laid out differently there.  Which
+is a Pass Designer problem rather than this module's: the buckets are copied
+per style, whatever each one is called and however many fields it holds.
+
+Date and time therefore share one field rather than taking two, and that field
+is the one place in this module where a **value is formatted rather than
+passed through** -- which is a departure from everything above, so here is why.
+
+Wallet formats a date field for the member's locale, which is the better thing
+by default, but the only knob over it is `dateStyle`, and every style except
+`None` carries the year: `9/19/26` at the shortest.  The header neither wraps
+nor shrinks -- it draws one line and ellipsizes -- so beside a logo and
+`logoText` there is not room for a year as well, and `Sep 19, 2026 at 5:30 PM`
+came out as `SEP 19, 2026 A…`, taking the hour with it.
+
+A text field has no such styles, so the string is built here: `9/19, 5:30 PM`.
+The cost is real and worth naming -- every member now reads one format
+whatever their phone is set to, and `5/6` is a date two readers will disagree
+about.  What is *not* lost is the data: `relevantDate` and
+`semantics.eventStartDate` stay ISO, so the Lock Screen still knows when this
+is, and the back field `開始` is still a real date field with its year and its
+locale.  The face is a label; the back is the record.
 
 **The images ship with the template.**  Core takes `logo.png` and `icon.png`
 from `WALLET_LOGO_URL`, one URL for the whole instance, and fetches them over
@@ -71,6 +106,7 @@ from __future__ import annotations
 import copy
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 
@@ -120,16 +156,42 @@ def template():
     return json.loads((TEMPLATE_ROOT / 'pass.json').read_text('utf-8'))
 
 
-def style_key(design):
-    """Whichever style the designer wrote -- `posterGeneric`, `eventTicket`, ...
+def style_keys(design):
+    """Every style the designer wrote -- `posterGeneric`, `generic`, ...
 
-    Found by shape rather than by name: the one top-level object holding
-    `*Fields` lists is the style, whatever Apple calls it this year.
+    Found by shape rather than by name: a top-level object holding `*Fields`
+    lists is a style, whatever Apple calls it this year.
+
+    In template order, which is Pass Designer's, and no order is relied on: the
+    caller fills them all in and Wallet picks between them by what the OS can
+    draw, not by what comes first.
     """
-    for key, value in design.items():
-        if isinstance(value, dict) and any(k.endswith('Fields') for k in value):
-            return key
-    raise ValueError(f'{TEMPLATE_ROOT.name}/pass.json has no pass style key')
+    found = [key for key, value in design.items()
+             if isinstance(value, dict) and any(k.endswith('Fields') for k in value)]
+    if not found:
+        raise ValueError(f'{TEMPLATE_ROOT.name}/pass.json has no pass style key')
+    return found
+
+
+def face_time(value):
+    """`2026-09-19T17:30:00+08:00` -> `9/19, 5:30 PM`, for the header slot.
+
+    Built by hand rather than with `strftime`, which would answer to the
+    server's locale and spell `%p` however that locale spells it -- and whose
+    no-padding flag is not portable.  The pass says the same thing on every
+    instance it is served from.
+
+    Anything unparseable is handed back untouched.  A header reading an ISO
+    timestamp is a blemish; a ticket download raising on one is an outage, and
+    this module already prefers the blemish everywhere else.
+    """
+    try:
+        moment = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return value
+    hour = moment.hour % 12 or 12
+    meridiem = 'AM' if moment.hour < 12 else 'PM'
+    return f'{moment.month}/{moment.day}, {hour}:{moment.minute:02d} {meridiem}'
 
 
 def _values(ticket):
@@ -141,7 +203,8 @@ def _values(ticket):
     with no venue ships no empty row.
     """
     return {
-        'time': {'value': ticket.start},
+        # The one formatted value -- see the module docstring.
+        'time': {'value': face_time(ticket.start)},
         # Value only: the caption is the template's, one word for every
         # category, so a lecture and a meetup are captioned the same.
         'event': {'value': ticket.title},
@@ -164,21 +227,24 @@ def pass_json(ticket, identity, design=None):
     """
     design = template() if design is None else design
     out = copy.deepcopy(design)
-    style = style_key(design)
     values = _values(ticket)
 
-    buckets = {}
-    for bucket, fields in design[style].items():
-        filled = []
-        for field in fields:
-            field = {k: v for k, v in copy.deepcopy(field).items() if k not in DESIGNER_KEYS}
-            field.update(values.get(field.get('key'), {}))
-            if field.get('value') in (None, ''):
-                continue
-            filled.append(field)
-        if filled:
-            buckets[bucket] = filled
-    out[style] = buckets
+    # Every style, not the first -- see the module docstring.  The same values
+    # go into each: `_values` is keyed by field key, and a field means the same
+    # thing wherever the layout puts it.
+    for style in style_keys(design):
+        buckets = {}
+        for bucket, fields in design[style].items():
+            filled = []
+            for field in fields:
+                field = {k: v for k, v in copy.deepcopy(field).items() if k not in DESIGNER_KEYS}
+                field.update(values.get(field.get('key'), {}))
+                if field.get('value') in (None, ''):
+                    continue
+                filled.append(field)
+            if filled:
+                buckets[bucket] = filled
+        out[style] = buckets
 
     out.update(identity)
     for key in STRIPPED_KEYS:

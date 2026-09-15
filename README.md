@@ -409,13 +409,46 @@ NFC-enabled passes, which wants an entitlement issued case by case and unlikely
 to be granted to a student association. A poster **generic** pass carries no
 such requirement.
 
-So `wallet_pass.style_key()` reads whichever key the template holds rather than
+So `wallet_pass.style_keys()` reads whichever keys the template holds rather than
 naming one: switching the style in Pass Designer renames it, and a hardcoded
 name would silently revert the design to core's `eventTicket`. For the same
 reason `preferredStyleSchemes` is stripped on the way out — Pass Designer writes
 `posterEventTicket` back into the template on every save, and shipping it would
 ask for the entitlement-gated scheme again. A test asserts both halves of that:
 that the template still carries the key, and that the pass never does.
+
+### `posterGeneric` needs iOS 27, so a pass carries two layouts
+
+An iPhone on iOS 26 cannot draw a poster pass, and Apple's answer is not a
+second pass but a second style **dictionary in the same pass.json** — the
+classic `generic` beside the poster one, each with its own fields, and Wallet
+draws the newest layout the OS understands. Everything the two share — the
+barcode, the colours, `semantics`, the serial — is top-level and written once.
+
+`pass_json` therefore fills in **every** style it finds. That is not tidiness:
+a style left alone still ships, and it would hand the template's 王小明 and
+`#42` to whoever an iPhone on 26 drew it for — not a blank ticket but a wrong
+one, signed under a real member's name. Two tests hold that line, both across
+every style rather than the first: the registration is substituted, and Pass
+Designer's `_id` bookkeeping is gone.
+
+The bucket rule above is the *poster* layout's and the fallback does not share
+it — `generic` draws `secondaryFields` and `auxiliaryFields` and has no
+`footerFields` at all, so 持票人 cannot sit where it sits today. Laying that out
+is a Pass Designer job like the rest of the design; nothing in Python needs to
+know which style is the fallback.
+
+**The template still ships one style**, so every pass issued today is
+poster-only and Apple's line on those is that iOS 26 and earlier "cannot
+display the new design". What that looks like from MemberApp has not been
+confirmed: `TicketStore.loadWalletPass` decides the button with
+`PKPass(data:)`, so if that parse is what fails, the Wallet button is simply
+absent on 26 rather than the pass adding and drawing wrong. The debug line
+`[Indico] wallet pass for event … — no pass` on an iOS 26 simulator would
+settle it.
+
+`test_the_template_ships_one_style_for_now` is the tripwire: it passes today
+and fails the moment the fallback is drawn, which is when it should be deleted.
 
 ### Why the whole of pass.json is replaced
 

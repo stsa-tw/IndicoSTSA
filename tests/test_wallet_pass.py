@@ -1,12 +1,13 @@
 """What the Apple Wallet pass is drawn from, and what survives the drawing."""
 
+import copy
 import json
 from dataclasses import replace
 
 import pytest
 
-from indico_stsa.wallet_pass import (ICON_FALLBACK, PassTicket, images, pass_json,
-                                     style_key, styled, template)
+from indico_stsa.wallet_pass import (ICON_FALLBACK, PassTicket, face_time, images, pass_json,
+                                     style_keys, styled, template)
 
 
 TICKET = PassTicket(
@@ -67,7 +68,25 @@ def built(design):
 
 @pytest.fixture
 def style(design):
-    return style_key(design)
+    """The one the template ships today, for the tests that read real fields."""
+    return style_keys(design)[0]
+
+
+@pytest.fixture
+def dual(design):
+    """The template plus a second style, which is what the fallback will be.
+
+    A copy of the real one under a classic key rather than a hand-written
+    stub: the point of these tests is that a style gets filled in wherever it
+    sits, and a stub with two invented fields would not notice if `pass_json`
+    started special-casing the layout it knows.
+
+    It stands in for a Pass Designer edit that has not happened yet -- the
+    template still carries one style, and `test_the_template_ships_one_style_
+    for_now` is what will say so when it does.
+    """
+    design['generic'] = copy.deepcopy(design[style_keys(design)[0]])
+    return design
 
 
 def fields_of(built, style):
@@ -76,20 +95,44 @@ def fields_of(built, style):
 
 # -- the design comes from the template, not from here ------------------------
 
-def test_style_key_is_found_by_shape_not_by_name(design):
+def test_style_keys_are_found_by_shape_not_by_name(design):
     """Switching the style in Pass Designer renames the key.
 
     `posterGeneric` today; whatever Apple calls the layout after that later.
     Naming it in code would mean a silent revert to core's `eventTicket` the
     first time somebody changed the design.
     """
-    assert style_key(design) in design
-    assert any(k.endswith('Fields') for k in design[style_key(design)])
+    found = style_keys(design)
+    assert found
+    for key in found:
+        assert key in design
+        assert any(k.endswith('Fields') for k in design[key])
+
+
+def test_every_style_is_found_not_just_the_first(dual):
+    """The fallback is a sibling of the poster style, not a nested thing.
+
+    `posterGeneric` needs iOS 27, so a pass that an iPhone on 26 can draw
+    carries a classic style beside it.  A reader that stopped at the first
+    match would leave whichever came second to ship as the template saved it.
+    """
+    assert set(style_keys(dual)) == {'posterGeneric', 'generic'}
 
 
 def test_a_design_with_no_style_key_is_an_error():
     with pytest.raises(ValueError):
-        style_key({'formatVersion': 1, 'description': 'nothing to draw'})
+        style_keys({'formatVersion': 1, 'description': 'nothing to draw'})
+
+
+def test_the_template_ships_the_fallback(design):
+    """The tripwire above became this the day the fallback was drawn.
+
+    `posterGeneric` alone is a pass an iPhone on iOS 26 cannot display, and
+    the code filling in two styles proves nothing if the design only has one.
+    Pass Designer generates the sibling from `Generate Compatible Pass`, so
+    this also fails if that switch is ever turned back off.
+    """
+    assert set(style_keys(design)) == {'posterGeneric', 'generic'}
 
 
 @pytest.mark.parametrize('key', ('backgroundColor', 'foregroundColor', 'labelColor',
@@ -127,6 +170,31 @@ def test_registration_values_are_substituted(built, style):
     assert written['registration']['value'] == '#7'
 
 
+def test_every_style_gets_the_registration(dual):
+    """The one that matters, and the one that was broken.
+
+    A fallback style is not decoration: it is the whole pass on an iPhone that
+    cannot draw the poster one.  Filling in only the first left the other
+    holding the template's sample values -- 王小明, `#42`, the sample event --
+    which is not a blank ticket but a *wrong* one, signed and issued under a
+    real member's name.
+    """
+    built = pass_json(TICKET, IDENTITY, dual)
+    for style in style_keys(dual):
+        written = fields_of(built, style)
+        assert written['event']['value'] == TICKET.title, style
+        assert written['holder']['value'] == TICKET.holder, style
+        assert written['registration']['value'] == '#7', style
+
+
+def test_a_dropped_field_is_dropped_from_every_style(dual):
+    """An event with no venue ships no labelled blank -- in either layout."""
+    bare = pass_json(replace(TICKET, venue=None, venue_name=None, room_name=None),
+                     IDENTITY, dual)
+    for style in style_keys(dual):
+        assert 'venue' not in fields_of(bare, style), style
+
+
 def test_the_primary_caption_is_the_template_s_for_every_category():
     """One caption whatever the event is -- a lecture and a meetup read alike.
 
@@ -134,24 +202,72 @@ def test_the_primary_caption_is_the_template_s_for_every_category():
     the ticket stays a Pass Designer edit.
     """
     built = pass_json(TICKET, IDENTITY)
-    style = style_key(template())
+    style = style_keys(template())[0]
     field = fields_of(built, style)['event']
     assert field['value'] == TICKET.title
     assert field['label'] == fields_of(template(), style)['event']['label']
 
 
-def test_date_and_time_share_one_header_field(built, style):
-    """The header draws one field, so both have to ride on it.
+def test_the_header_reads_as_one_short_line(built, style):
+    """The header draws one field, so date and time both ride on it.
 
-    Wallet formats a real date for the member's locale given a style, which is
-    why the value stays ISO and the styling stays in the template -- and why
-    there is no second field for the time: nothing would draw it.
+    And it is a *text* field, not a date one, because every `dateStyle` above
+    `None` carries the year and the slot has no room for it -- the header
+    neither wraps nor shrinks, it draws one line and ellipsizes.  See the
+    module docstring for what that costs.
     """
     written = fields_of(built, style)
-    assert written['time']['value'] == TICKET.start
-    assert written['time']['dateStyle'] == 'PKDateStyleMedium'
-    assert written['time']['timeStyle'] == 'PKDateStyleShort'
-    assert 'date' not in written
+    assert written['time']['value'] == '9/25, 6:00 PM'
+    assert 'dateStyle' not in written['time'], 'a text field styled as a date'
+    assert 'timeStyle' not in written['time']
+
+
+@pytest.mark.parametrize(('start', 'expected'), (
+    ('2026-09-25T18:00:00+08:00', '9/25, 6:00 PM'),
+    ('2026-09-25T09:05:00+08:00', '9/25, 9:05 AM'),      # minutes keep their zero
+    ('2026-01-01T00:00:00+08:00', '1/1, 12:00 AM'),      # midnight is 12, not 0
+    ('2026-12-25T12:00:00+08:00', '12/25, 12:00 PM'),    # and noon is PM
+    ('2026-09-25T23:59:00+08:00', '9/25, 11:59 PM'),
+))
+def test_the_face_time_is_built_here_not_by_wallet(start, expected):
+    """Hand-built, so it reads the same from every instance.
+
+    `strftime` would answer to the server's locale -- `%p` is whatever that
+    locale spells it -- and its no-padding flag is not portable.  A pass should
+    not say something different because it was served from a different box.
+    """
+    assert face_time(start) == expected
+
+
+def test_an_unreadable_start_is_handed_back_rather_than_raised_on():
+    """A blemish on the header beats a ticket download that 500s.
+
+    Which is the same call `styled` makes about a pass object missing an
+    attribute, and `images` about a template missing a file.
+    """
+    assert face_time('not a date') == 'not a date'
+    assert face_time(None) is None
+
+
+def test_the_start_survives_a_header_that_truncates(built, design):
+    """The header is a narrow slot, and on the classic fallback a very narrow one.
+
+    `Sep 19, 2026 at 5:30 PM` does not fit beside a logo on iOS 26 -- Wallet
+    draws `SEP 19, 2026 A…` -- and the header was the *only* place the start
+    lived, so the hour the event began was then nowhere on the pass at all.
+    `結束` was already a back field; `開始` is one now too.
+
+    Back fields have no width to run out of and every style draws all of them,
+    which is why this is asserted per style rather than on the face.  It is
+    also why the fix is this rather than a shorter date format: the format is
+    shared with the poster, and trading that face's legibility for a slot that
+    can truncate anyway is the wrong way round.
+    """
+    for style in style_keys(design):
+        back = {f['key']: f for f in built[style]['backFields']}
+        assert back['date']['value'] == TICKET.start, style
+        assert back['date']['dateStyle'] == 'PKDateStyleMedium', style
+        assert back['date']['timeStyle'] == 'PKDateStyleShort', style
 
 
 def test_identity_overrides_whatever_the_template_was_saved_with(built):
@@ -192,6 +308,18 @@ def test_preferred_style_schemes_is_stripped(built, design):
 def test_designer_bookkeeping_does_not_ship(built, style):
     """`_id` is how Pass Designer tracks a field between saves."""
     assert not any('_id' in field for field in fields_of(built, style).values())
+
+
+def test_no_style_ships_designer_bookkeeping(dual):
+    """As above, for the style the tests above do not read.
+
+    `_id` was stripped inside the loop over one style's buckets, so a second
+    style kept the lot -- the same shape of bug as the one below, and the
+    reason both are asserted per style rather than once.
+    """
+    built = pass_json(TICKET, IDENTITY, dual)
+    for style in style_keys(dual):
+        assert not any('_id' in field for field in fields_of(built, style).values()), style
 
 
 def test_the_barcode_is_the_plural_form(built):
@@ -311,4 +439,4 @@ def test_the_serialiser_emits_what_we_built(built):
     # The keys the whitelist would otherwise have dropped.
     assert 'semantics' in emitted
     assert 'sharingProhibited' in emitted
-    assert style_key(emitted) != 'eventTicket'
+    assert 'eventTicket' not in style_keys(emitted)
