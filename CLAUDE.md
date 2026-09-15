@@ -39,8 +39,7 @@ Runtime/maintenance:
 indico stsa install-ticket [--no-default] [--dry-run] [--category-id N]
 python scripts/build-ticket-artwork.py                       # regenerate static/ticket/background.png
 python scripts/install-apple-badges.py ~/Downloads/Add-to-Apple-Wallet.zip
-python scripts/build-wallet-artwork.py                       # regenerate static/wallet/pass/
-python scripts/preview-wallet-pass.py                        # draw the Apple Wallet pass (Pillow only)
+python scripts/sign-preview-pass.py --certificate … --key …   # build a real signed .pkpass
 python scripts/sign-preview-pass.py --certificate c.pem --key k.pem   # sign a real one to open in Wallet
 python .github/scripts/check_wheel.py dist                   # release gate on wheel contents
 ```

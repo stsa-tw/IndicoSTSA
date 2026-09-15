@@ -76,8 +76,6 @@ avoid-escape = true
 # both read the plugin's own constants, so they have to find the package before
 # they can import them -- the alternative is a second copy of the palette kept in
 # step by hand, which is what they exist to prevent
-'scripts/preview-wallet-pass.py' = ['E402']
-'scripts/build-wallet-artwork.py' = ['E402']
 # N802: `_createSignature` is the library's method name, overridden verbatim
 'scripts/sign-preview-pass.py' = ['E402', 'N802']
 # the plugin must never break an email or a page over a malformed setting

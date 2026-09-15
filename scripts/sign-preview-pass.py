@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """Build a real, signed `.pkpass` so the design can be opened in Wallet.
 
-`preview-wallet-pass.py` draws a picture of the pass; this makes the pass.  It
-builds the same `EventTicket` Indico builds, paints it with `wallet_pass.styled`
-exactly as the plugin does, signs it, and writes a file you can open.
+It builds the pass `wallet_pass.styled` would hand back for a registration --
+the same call the plugin makes, from the same Pass Designer template -- signs it
+the way Indico signs, and writes a file you can open.
 
 That is the only way to see what Wallet will really render: iOS refuses an
 unsigned pass, in the Simulator as much as on a phone, so no drawing can stand
@@ -33,7 +33,7 @@ from pathlib import Path
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.serialization import pkcs7
-from wallet.models import Barcode, BarcodeFormat, EventTicket, Pass
+from wallet.models import EventTicket, Pass
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -41,7 +41,7 @@ import _bootstrap
 
 ROOT = _bootstrap.ROOT
 
-from indico_stsa.wallet_pass import refined, styled
+from indico_stsa.wallet_pass import PassTicket, styled
 
 #: Apple's intermediate.  Indico ships a copy; this uses that one rather than
 #: asking for a second, so the signature matches what the server would produce.
@@ -74,33 +74,22 @@ class PreviewPass(Pass):
         )
 
 
-def build(title, date, venue, name, email, *, cert_details):
-    """The front fields core writes, in its order, plus the back fields the
-    refinement reads from -- enough for the pass to be the one a member gets."""
-    ticket = EventTicket()
-    ticket.addPrimaryField('event-title', title, 'Event')
-    ticket.addSecondaryField('event-date', date, 'Date')
-    ticket.addSecondaryField('event-venue', venue, 'Venue')
-    ticket.addAuxiliaryField('registration-name', name, 'Name')
-    ticket.addAuxiliaryField('registration-email', email, 'Email')
-    ticket.addBackField('back-registration-email', email, 'Email')
-    ticket.addBackField('back-ticket-number', '#1042', 'Ticket number')
+def build(ticket, *, cert_details):
+    """The pass the plugin would issue for `ticket`.
 
-    # The same pair the plugin applies, in the same order, so this previews the
-    # pass a member gets rather than a near relative of it.
-    refined(ticket)
-
-    passfile = PreviewPass(ticket,
+    Core's own `EventTicket` fields are not constructed here, deliberately: the
+    template supersedes every one of them, so building them would prove only
+    that they are discarded.  What core really contributes is the identity, read
+    off the certificate exactly as `AppleWalletManager` reads it -- and Wallet
+    checks those three against the signature, so a preview that invented them
+    would be refused for a reason that has nothing to do with the design.
+    """
+    passfile = PreviewPass(EventTicket(),
                            passTypeIdentifier=cert_details['UID'],
                            organizationName=cert_details['O'],
                            teamIdentifier=cert_details['OU'])
     passfile.serialNumber = 'stsa-design-preview'
-    passfile.description = f'{title} — design preview'
-    # Not a real check-in code: this pass is for looking at, and one that
-    # scanned would eventually be scanned at a door.
-    passfile.barcode = Barcode(message='stsa-design-preview', format=BarcodeFormat.QR)
-
-    return styled(passfile)
+    return styled(passfile, ticket)
 
 
 def main():
@@ -111,15 +100,21 @@ def main():
     parser.add_argument('--wwdr', type=Path, help="Apple's WWDR intermediate, PEM (downloaded if omitted)")
     parser.add_argument('--out', type=Path, default=ROOT / 'preview' / 'wallet-pass.pkpass')
     parser.add_argument('--title', default='2026 STSA Boba Chat')
-    parser.add_argument('--date', default='30 Aug 2026, 13:00')
+    parser.add_argument('--kicker', default='聚會', help='the label over the title')
+    # Real dates rather than pre-formatted text: the template's fields carry
+    # `dateStyle`, so Wallet formats them for the reader's locale and a
+    # already-formatted string would render as literal characters.
+    parser.add_argument('--start', default='2026-08-30T13:00:00+08:00')
+    parser.add_argument('--end', default='2026-08-30T15:00:00+08:00')
     parser.add_argument('--venue', default='Wushiland Boba')
+    parser.add_argument('--room', default='')
+    parser.add_argument('--address', default='')
+    parser.add_argument('--url', default='https://event.stsa.tw/')
     parser.add_argument('--name', default='楊晨諺')
-    parser.add_argument('--email', default='member@u.nus.edu')
-    # For trying a palette before committing one to `constants.py`. Omitted,
-    # the pass is exactly what the plugin would issue.
-    parser.add_argument('--background')
-    parser.add_argument('--foreground')
-    parser.add_argument('--label')
+    parser.add_argument('--number', default='1042', help='registration friendly id')
+    # No colour overrides: the colours are in the template now, and `styled`
+    # replaces the whole of pass.json, so an attribute set afterwards would be
+    # silently ignored rather than previewed.
     args = parser.parse_args()
 
     certificate = x509.load_pem_x509_certificate(args.certificate.read_bytes())
@@ -131,13 +126,23 @@ def main():
         wwdr.parent.mkdir(parents=True, exist_ok=True)
         urllib.request.urlretrieve(WWDR_URL, wwdr)
 
-    passfile = build(args.title, args.date, args.venue, args.name, args.email, cert_details=details)
-
-    for attribute, override in (('backgroundColor', args.background),
-                                ('foregroundColor', args.foreground),
-                                ('labelColor', args.label)):
-        if override:
-            setattr(passfile, attribute, override)
+    ticket = PassTicket(
+        title=args.title,
+        kicker=args.kicker,
+        start=args.start,
+        end=args.end,
+        venue=' · '.join(p for p in (args.venue, args.room) if p) or None,
+        venue_name=args.venue or None,
+        room_name=args.room or None,
+        address=args.address or None,
+        event_url=args.url,
+        holder=args.name,
+        friendly_id=args.number,
+        # Not a real check-in code: this pass is for looking at, and one that
+        # scanned would eventually be scanned at a door.
+        qr_message='stsa-design-preview',
+    )
+    passfile = build(ticket, cert_details=details)
 
     # `create` hands back the stream it wrote into, positioned at the end --
     # reading without rewinding yields an empty file, which unzip reports as a
