@@ -432,7 +432,7 @@ what keeps the module free of Indico and testable without an instance.
 | Pass field | From |
 | --- | --- |
 | header `time` | `event.start_dt_local` — the event's timezone, so the pass shows the hour the organiser announced. Date and time on one field, because the header draws only one |
-| primary `event` | the title, labelled with the event's kind (活動 / 聚會 / 講座) |
+| primary `event` | the title. The caption is the template's — one word for every category, rather than the event's kind |
 | footer `holder` | `registration.full_name` |
 | back `registration` | `#{friendly_id}` |
 | back `venue` | `venue_name · room_name`, dropped entirely when the event has neither |

@@ -100,7 +100,6 @@ def main():
     parser.add_argument('--wwdr', type=Path, help="Apple's WWDR intermediate, PEM (downloaded if omitted)")
     parser.add_argument('--out', type=Path, default=ROOT / 'preview' / 'wallet-pass.pkpass')
     parser.add_argument('--title', default='2026 STSA Boba Chat')
-    parser.add_argument('--kicker', default='聚會', help='the label over the title')
     # Real dates rather than pre-formatted text: the template's fields carry
     # `dateStyle`, so Wallet formats them for the reader's locale and a
     # already-formatted string would render as literal characters.
@@ -128,7 +127,6 @@ def main():
 
     ticket = PassTicket(
         title=args.title,
-        kicker=args.kicker,
         start=args.start,
         end=args.end,
         venue=' · '.join(p for p in (args.venue, args.room) if p) or None,

@@ -92,17 +92,6 @@ STRIPPED_KEYS = ('preferredStyleSchemes',)
 #: so this module stays importable -- and testable -- without the library.
 BARCODE_QR = 'PKBarcodeFormatQR'
 
-#: The label over the event title, keyed by Indico's event type.
-#:
-#: Design rather than glue, so it lives here: these strings are the keys the
-#: template's `.lproj` files translate, and they mirror `IndicoEvent.kicker` in
-#: the member app, so a member reads the same word on the pass and on the app's
-#: ticket screen.
-PASS_KICKERS = {'conference': '活動', 'meeting': '聚會', 'lecture': '講座'}
-
-#: What an event of an unrecognised type is called.
-PASS_KICKER_DEFAULT = '活動'
-
 
 @dataclass(frozen=True)
 class PassTicket:
@@ -114,7 +103,6 @@ class PassTicket:
     """
 
     title: str
-    kicker: str                 # 活動 / 聚會 / 講座 -- the label over the title
     start: str                  # ISO 8601 with offset
     end: str
     venue: str | None           # `location · room`
@@ -154,7 +142,9 @@ def _values(ticket):
     """
     return {
         'time': {'value': ticket.start},
-        'event': {'value': ticket.title, 'label': ticket.kicker},
+        # Value only: the caption is the template's, one word for every
+        # category, so a lecture and a meetup are captioned the same.
+        'event': {'value': ticket.title},
         'date': {'value': ticket.start},
         'holder': {'value': ticket.holder},
         'venue': {'value': ticket.venue},

@@ -33,7 +33,7 @@ from indico_stsa.reglist import REGLIST_FILTER_TEMPLATE, hide_internal_columns
 from indico_stsa.ticket_email import add_wallet_badges
 from indico_stsa.util import get_settings, is_group_login_required, is_group_plugin_installed
 from indico_stsa.wallet import VENDORS, badge_url
-from indico_stsa.wallet_pass import PASS_KICKER_DEFAULT, PASS_KICKERS, PassTicket
+from indico_stsa.wallet_pass import PassTicket
 from indico_stsa.wallet_pass import styled as style_wallet_pass
 
 
@@ -271,8 +271,7 @@ class STSAPlugin(IndicoPlugin):
         venue = ' · '.join(p.strip() for p in (event.venue_name, event.room_name) if p and p.strip())
         return PassTicket(
             title=event.title,
-            kicker=PASS_KICKERS.get(event.type, PASS_KICKER_DEFAULT),
-            start=event.start_dt_local.replace(microsecond=0).isoformat(),
+                start=event.start_dt_local.replace(microsecond=0).isoformat(),
             end=event.end_dt_local.replace(microsecond=0).isoformat(),
             venue=venue or None,
             venue_name=event.venue_name or None,

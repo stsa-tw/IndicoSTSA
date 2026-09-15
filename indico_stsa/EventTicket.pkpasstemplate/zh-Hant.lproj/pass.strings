@@ -18,10 +18,7 @@
 "活動頁" = "活動頁";
 "注意事項" = "注意事項";
 
-/* IndicoEvent.kicker, which fills the primary field's label */
 "活動" = "活動";
-"聚會" = "聚會";
-"講座" = "講座";
 
 "出示 QR code 入場" = "出示 QR code 入場";
 "入場時出示這張票的 QR code。票券在活動結束後仍然有效，可以留著當作紀錄。" = "入場時出示這張票的 QR code。票券在活動結束後仍然有效，可以留著當作紀錄。";

@@ -5,13 +5,12 @@ from dataclasses import replace
 
 import pytest
 
-from indico_stsa.wallet_pass import (ICON_FALLBACK, PASS_KICKER_DEFAULT, PASS_KICKERS,
-                                     PassTicket, images, pass_json, style_key, styled, template)
+from indico_stsa.wallet_pass import (ICON_FALLBACK, PassTicket, images, pass_json,
+                                     style_key, styled, template)
 
 
 TICKET = PassTicket(
     title='2026 STSA 中秋烤肉',
-    kicker='聚會',
     start='2026-09-25T18:00:00+08:00',
     end='2026-09-25T22:00:00+08:00',
     venue='East Coast Park · Area D',
@@ -93,9 +92,9 @@ def test_a_design_with_no_style_key_is_an_error():
         style_key({'formatVersion': 1, 'description': 'nothing to draw'})
 
 
-@pytest.mark.parametrize('key', ['backgroundColor', 'foregroundColor', 'labelColor',
+@pytest.mark.parametrize('key', ('backgroundColor', 'foregroundColor', 'labelColor',
                                  'logoText', 'description', 'organizationName',
-                                 'sharingProhibited'])
+                                 'sharingProhibited'))
 def test_the_template_supplies_the_design(built, design, key):
     """Every appearance key is quoted, so redesigning is not a commit here.
 
@@ -128,11 +127,17 @@ def test_registration_values_are_substituted(built, style):
     assert written['registration']['value'] == '#7'
 
 
-def test_the_kicker_becomes_the_primary_label(built, style):
-    """The word over the title is the event's kind, as the app's ticket screen
-    heads it -- and it is a label, so a `.lproj` key rather than a value."""
-    assert fields_of(built, style)['event']['label'] == '聚會'
-    assert PASS_KICKER_DEFAULT in PASS_KICKERS.values()
+def test_the_primary_caption_is_the_template_s_for_every_category():
+    """One caption whatever the event is -- a lecture and a meetup read alike.
+
+    The value is substituted and the label deliberately is not, so recaptioning
+    the ticket stays a Pass Designer edit.
+    """
+    built = pass_json(TICKET, IDENTITY)
+    style = style_key(template())
+    field = fields_of(built, style)['event']
+    assert field['value'] == TICKET.title
+    assert field['label'] == fields_of(template(), style)['event']['label']
 
 
 def test_date_styles_are_the_template_s(built, style):
@@ -271,7 +276,8 @@ def test_styled_survives_a_pass_without_files():
     keeps Indico's images is a working ticket; an exception here is a download
     that fails."""
     class Bare:
-        passTypeIdentifier = teamIdentifier = serialNumber = 'x'
+        def __init__(self):
+            self.passTypeIdentifier = self.teamIdentifier = self.serialNumber = 'x'
 
     bare = Bare()
     styled(bare, TICKET)
@@ -298,5 +304,6 @@ def test_the_serialiser_emits_what_we_built(built):
 
     assert emitted == built
     # The keys the whitelist would otherwise have dropped.
-    assert 'semantics' in emitted and 'sharingProhibited' in emitted
+    assert 'semantics' in emitted
+    assert 'sharingProhibited' in emitted
     assert style_key(emitted) != 'eventTicket'

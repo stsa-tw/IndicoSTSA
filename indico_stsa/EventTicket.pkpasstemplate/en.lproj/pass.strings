@@ -17,11 +17,7 @@
 "活動頁" = "Event page";
 "注意事項" = "Please note";
 
-/* IndicoEvent.kicker, which fills the primary field's label. Singular here:
-   this is one event, not the tab that lists them. */
 "活動" = "Event";
-"聚會" = "Meetup";
-"講座" = "Talk";
 
 "出示 QR code 入場" = "Show your QR code at the door";
 "入場時出示這張票的 QR code。票券在活動結束後仍然有效，可以留著當作紀錄。" = "Show this pass’s QR code at the door. It stays valid after the event, so you can keep it as a record.";
