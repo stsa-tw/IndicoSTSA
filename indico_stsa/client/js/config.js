@@ -18,6 +18,7 @@ const EMPTY = {
   discountAppliesTo: null,
   noticeText: '',
   groupLoginRequired: false,
+  lockEmail: false,
 };
 
 let cached = null;

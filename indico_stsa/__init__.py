@@ -15,7 +15,10 @@ Seven things STSA needs that core Indico does not provide:
 * an Apple Wallet pass drawn in Xcode's Pass Designer rather than in code, so
   the saved ticket is edited by opening a file and looking at it;
 * a one-click payment reminder to everybody on a registration form whose fee is
-  still outstanding, each mail naming what that person owes.
+  still outstanding, each mail naming what that person owes;
+* the registration form's e-mail field held to the address on the membership of
+  whoever is signed in, so that the registrations a member makes can always be
+  matched back to them.
 
 An STSA membership is an account on this site, so a *member* is anyone signed
 in and "becoming a member" is exactly "signing in".
@@ -24,6 +27,6 @@ in and "becoming a member" is exactly "signing in".
 from indico.util.i18n import make_bound_gettext
 
 
-__version__ = '0.2.7'
+__version__ = '0.2.8'
 
 _ = make_bound_gettext('stsa')

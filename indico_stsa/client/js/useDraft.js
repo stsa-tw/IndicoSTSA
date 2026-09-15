@@ -13,6 +13,19 @@ import {clearDraft, saveDraft, takeDraft} from './draft';
 //: round trip through the login page that challenge is gone.
 const EPHEMERAL_FIELDS = ['captcha'];
 
+//: ...and the one that must not come back once the trip has been made.  The
+//: e-mail field is held to the membership address of whoever is now signed in,
+//: and it is disabled to say so -- so restoring the address typed before they
+//: signed in would put a value the server refuses into the one field the
+//: participant can no longer correct.  Core has already filled it in from the
+//: account, which is the address they are registering under anyway.
+const LOCKED_EMAIL_FIELD = 'email';
+
+/** The names this draft must not write back into the form. */
+function skippedFields(config) {
+  return config.lockEmail ? [...EPHEMERAL_FIELDS, LOCKED_EMAIL_FIELD] : EPHEMERAL_FIELDS;
+}
+
 /**
  * Restore a saved draft into `form`, and keep saving the answers away.
  *
@@ -69,10 +82,11 @@ export function useDraft(config, form) {
     // A macrotask runs after every effect in the mounting commit, so by the
     // time this fires the fields are registered and a plain `change` reaches
     // them the way it would if the participant had typed it.
+    const skipped = skippedFields(config);
     const timeout = setTimeout(() => {
       form.batch(() => {
         Object.entries(values).forEach(([name, value]) => {
-          if (!EPHEMERAL_FIELDS.includes(name)) {
+          if (!skipped.includes(name)) {
             form.change(name, value);
           }
         });
