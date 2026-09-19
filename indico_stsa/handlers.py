@@ -44,14 +44,21 @@ def enforce_group_login(registration, data, *, management=False):
 
     Organizers are never gated: adding a participant to a group from the
     management area is a deliberate act by somebody who is signed in already.
+    That carve-out is core's ``management`` flag, which describes the action in
+    front of us, and deliberately *not* ``registration.created_by_manager``,
+    which only records who first created the row.  A registration an organizer
+    made is still editable from the link in its confirmation e-mail, by
+    somebody who need not be signed in at all, so keying on the stored flag
+    would wave exactly the choice this is meant to stop straight through --
+    hence ``trust_manager=False`` below as well.
     """
-    if management or registration.created_by_manager:
+    if management:
         return
     if not is_group_login_required(registration.registration_form):
         return
     if _submitted_group_mode(registration, data) not in GROUP_MODES_WITH_GROUP:
         return
-    if registration_is_member(registration):
+    if registration_is_member(registration, trust_manager=False):
         return
     raise UserValueError(_('Group registration on this form is only open to STSA members. Please sign in with '
                            'your STSA membership and register again -- your answers are kept while you sign in.'))

@@ -210,7 +210,10 @@ group, or let the very thing this is meant to stop straight through, depending
 on which plugin's handler happened to run first.
 
 Organizers are never gated. Adding a participant to a group from the management
-area is a deliberate act by somebody who is already signed in.
+area is a deliberate act by somebody who is already signed in. The carve-out is
+that *act*, not the registration it produced: a registration an organizer made
+is still editable from the link in its confirmation e-mail, by somebody who
+need not be signed in at all, so a later edit of it is gated like any other.
 
 ## 4. The wallet buttons
 

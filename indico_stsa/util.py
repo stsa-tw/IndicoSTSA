@@ -145,7 +145,7 @@ def reprice_group_of(registration):
 
 # -- membership --------------------------------------------------------------
 
-def registration_is_member(registration, *, management=False):
+def registration_is_member(registration, *, management=False, trust_manager=True):
     """Whether this registration earns the member discount.
 
     An STSA membership is an account on this site, so the test is "is this
@@ -159,11 +159,16 @@ def registration_is_member(registration, *, management=False):
 
     Registrations created from the management area are trusted: an organizer
     adding a participant, or applying the discount to registrations made before
-    it was switched on, has made that decision deliberately.
+    it was switched on, has made that decision deliberately.  That trust is in
+    the *record*, though, not in whoever is in front of it now -- the
+    registration stays editable from the link in its confirmation e-mail -- so
+    a caller deciding what this request may **do**, rather than what this
+    registration is worth, passes ``trust_manager=False`` and gets the
+    signed-in test on its own (see `indico_stsa.handlers.enforce_group_login`).
     """
     if registration.user is None:
         return False
-    if management or registration.created_by_manager:
+    if management or (trust_manager and registration.created_by_manager):
         return True
     return has_request_context() and session.user is not None and session.user == registration.user
 
