@@ -11,7 +11,7 @@ in for one.  Deploying the plugin is *not* required -- the certificate is.
 
     pip install wallet-py3k cryptography
     python scripts/sign-preview-pass.py \\
-        --certificate ~/pass-cert.pem --key ~/pass-key.pem --password secret
+        --certificate ~/pass-cert.pem --key ~/pass-key.pem
 
 Then open the file it writes:
 
@@ -20,12 +20,17 @@ Then open the file it writes:
 * **Mac** -- open it, if this machine's Wallet accepts passes.
 
 **The key never leaves your machine and is never written anywhere.** Both are
-read straight from the paths you give and handed to the signer. Where to find
-them: the same PEM blocks configured on the Indico category, under Apple Wallet,
-or the Pass Type ID certificate from your Apple Developer account.
+read straight from the paths you give and handed to the signer. If the key has a
+passphrase you are prompted for it, so it never reaches argv -- which `ps` and
+`/proc/<pid>/cmdline` hand to every account on the machine -- or your shell
+history; for an unattended run, put it in `STSA_PASS_KEY_PASSWORD` instead.
+Where to find them: the same PEM blocks configured on the Indico category, under
+Apple Wallet, or the Pass Type ID certificate from your Apple Developer account.
 """
 
 import argparse
+import getpass
+import os
 import sys
 import urllib.request
 from pathlib import Path
@@ -92,11 +97,35 @@ def build(ticket, *, cert_details):
     return styled(passfile, ticket)
 
 
+def read_password(key):
+    """The passphrase for `key`, from the environment or a prompt -- never argv.
+
+    A command line is world-readable while the process runs (`ps`,
+    `/proc/<pid>/cmdline`), and a documented `--password secret` also leaves the
+    literal passphrase in the shell's history file, so this asks for it instead.
+
+    A key with no passphrase is never asked about: the prompt is gated on the
+    PEM saying it is encrypted, so a run with nothing to supply stays as
+    interaction-free as it was.
+    """
+    # An environment variable is readable only by this user's own processes,
+    # where argv is readable by everybody on the machine; the script spawns
+    # nothing, so nothing inherits it either.
+    supplied = os.environ.get('STSA_PASS_KEY_PASSWORD')
+    if supplied is not None:
+        return supplied
+    # Both encrypted forms say so in a header line: PKCS#8's `BEGIN ENCRYPTED
+    # PRIVATE KEY`, and `Proc-Type: 4,ENCRYPTED` above a traditional body.  An
+    # unencrypted key carries neither, and is signed with no password at all.
+    if 'ENCRYPTED' not in key.read_text():
+        return ''
+    return getpass.getpass(f'Passphrase for {key}: ')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--certificate', type=Path, required=True, help='Pass Type ID certificate, PEM')
     parser.add_argument('--key', type=Path, required=True, help='its private key, PEM')
-    parser.add_argument('--password', default='', help='the key password, if it has one')
     parser.add_argument('--wwdr', type=Path, help="Apple's WWDR intermediate, PEM (downloaded if omitted)")
     parser.add_argument('--out', type=Path, default=ROOT / 'preview' / 'wallet-pass.pkpass')
     parser.add_argument('--title', default='2026 STSA Boba Chat')
@@ -145,7 +174,7 @@ def main():
     # `create` hands back the stream it wrote into, positioned at the end --
     # reading without rewinding yields an empty file, which unzip reports as a
     # corrupt archive rather than an empty one. Indico seeks it too.
-    archive = passfile.create(certificate, args.key.read_text(), str(wwdr), args.password)
+    archive = passfile.create(certificate, args.key.read_text(), str(wwdr), read_password(args.key))
     archive.seek(0)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

@@ -518,13 +518,16 @@ Simulator as much as on a phone. Build a real one —
 ```bash
 pip install wallet-py3k cryptography
 python scripts/sign-preview-pass.py \
-    --certificate ~/pass-cert.pem --key ~/pass-key.pem --password secret
+    --certificate ~/pass-cert.pem --key ~/pass-key.pem
 ```
 
 — then AirDrop it to yourself, or drag it onto a booted simulator. Deploying the
 plugin is not required; the certificate is, and it is the same PEM pair
 configured on the Indico category under Apple Wallet. **The key is read from the
-path given and never stored.**
+path given and never stored**, and a passphrase on it is prompted for rather than
+passed on the command line, where every account on the machine can read it out of
+`ps` and the shell keeps it in history — set `STSA_PASS_KEY_PASSWORD` for a run
+that has to be unattended.
 
 The whole design can be switched off with `wallet_pass_design`, and both the
 handler and every failure inside it are caught: this runs while a participant is
