@@ -22,17 +22,20 @@ from indico_stsa.constants import DEFAULT_SUBJECT_PREFIX
 from indico_stsa.discount import format_rate
 from indico_stsa.email_lock import foreign_email_error, is_membership_address, lock_email_field
 from indico_stsa.emails import rewrite_subject
-from indico_stsa.fields import MemberDiscountField
+from indico_stsa.fields import PROFILE_FIELD_CLASSES, MemberDiscountField
 from indico_stsa.forms import STSASettingsForm
 from indico_stsa.group_preview import quote_member_price
-from indico_stsa.handlers import (get_locked_field_reason, handle_registration_created, handle_registration_updated)
+from indico_stsa.handlers import (apply_member_profile, get_locked_field_reason, handle_registration_created,
+                                   handle_registration_updated)
 from indico_stsa.emoji import draw_item_on_badge
 from indico_stsa.fonts import update_badge_style
 from indico_stsa.payments import OutstandingAmountPlaceholder, find_unpaid
 from indico_stsa.pricing import preview_base_price
+from indico_stsa.profile import autofill_profile_fields
 from indico_stsa.reglist import REGLIST_FILTER_TEMPLATE, hide_internal_columns
 from indico_stsa.ticket_email import add_wallet_badges
-from indico_stsa.util import email_lock_member, get_settings, is_group_login_required, is_group_plugin_installed
+from indico_stsa.util import (email_lock_member, find_profile_fields, get_settings, is_group_login_required,
+                              is_group_plugin_installed, member_profile)
 from indico_stsa.wallet import VENDORS, badge_url
 from indico_stsa.wallet_pass import PassTicket
 from indico_stsa.wallet_pass import styled as style_wallet_pass
@@ -52,9 +55,11 @@ class STSAPlugin(IndicoPlugin):
 
     An STSA membership is an account on this site, so a member is anyone signed
     in, and the address on their membership is the one they register with: the
-    e-mail field is held to it while they are signed in. Where the group
-    registration plugin is also installed, group registration can be restricted
-    to signed-in members too.
+    e-mail field is held to it while they are signed in. Four more field types
+    -- 中文姓名, 英文姓名, 就讀科系, 目前身分 -- are filled in from the details
+    on the membership and locked to them; signed out, they are ordinary text
+    boxes. Where the group registration plugin is also installed, group
+    registration can be restricted to signed-in members too.
 
     It also swaps Indico's "Add to Wallet" dropdown for the standard Apple and
     Google wallet badges, which is what participants actually look for, gives
@@ -73,6 +78,7 @@ class STSAPlugin(IndicoPlugin):
         'cjk_badge_fonts': True,
         'payment_reminders': True,
         'lock_member_email': True,
+        'autofill_member_profile': True,
     }
 
     def init(self):
@@ -343,12 +349,30 @@ class STSAPlugin(IndicoPlugin):
 
     def _get_fields(self, sender, **kwargs):
         yield MemberDiscountField
+        yield from PROFILE_FIELD_CLASSES
 
     def _registration_created(self, registration, data=None, management=False, **kwargs):
         handle_registration_created(registration, data, management=management)
+        self._fill_in_profile(registration, management=management)
 
     def _registration_updated(self, registration, data=None, management=False, **kwargs):
         handle_registration_updated(registration, data, management=management)
+        self._fill_in_profile(registration, management=management)
+
+    def _fill_in_profile(self, registration, *, management=False):
+        """Write the member's own details over what the form submitted.
+
+        Guarded on its own, and after the gate and the discount rather than
+        with them: those may raise on purpose, to refuse a registration, and
+        this must not -- a field that did not get overwritten is a text box
+        that kept what the participant typed, which is the feature switched
+        off and nothing worse.
+        """
+        try:
+            profile = self._member_profile(registration.registration_form, registration, management=management)
+            apply_member_profile(registration, profile)
+        except Exception:
+            self.logger.exception('Could not fill in the member details of %r', registration)
 
     def _is_field_data_locked(self, sender, registration=None, **kwargs):
         return get_locked_field_reason(sender, registration)
@@ -356,11 +380,11 @@ class STSAPlugin(IndicoPlugin):
     def _intercept_submission_data(self, sender, func=None, args=None, **kwargs):
         """Fix up the data the participant's registration form is rendered from.
 
-        Two things are written into it: the price the group plugin's plan
-        picker quotes, and the padlock on the e-mail field of a member who is
-        signed in.  They are guarded separately because they have nothing to do
-        with each other, and losing both because one of them raised would be a
-        poor trade.
+        Three things are written into it: the price the group plugin's plan
+        picker quotes, the padlock on the e-mail field of a member who is
+        signed in, and the member's own details in the fields made for them.
+        They are guarded separately because they have nothing to do with each
+        other, and losing all of them because one raised would be a poor trade.
 
         Building the form data is the original function's job either way, so it
         is called first and its result handed back whatever happens next: this
@@ -384,7 +408,26 @@ class STSAPlugin(IndicoPlugin):
                 lock_email_field(form_data)
         except Exception:
             self.logger.exception('Could not lock the e-mail field to the membership address')
+        try:
+            if profile := self._member_profile(regform, registration, management=management):
+                autofill_profile_fields(form_data, profile)
+        except Exception:
+            self.logger.exception('Could not fill in the member details on the registration form')
         return form_data
+
+    def _member_profile(self, regform, registration=None, *, management=False):
+        """What the signed-in member's account fills in on this form, or ``{}``.
+
+        The setting is read here, like the e-mail lock's, so that switching it
+        off turns the padlock and the overwrite off together.  A form with none
+        of the fields is answered before anything is looked up: this runs on
+        every registration form there is, and most have no use for it.
+        """
+        if not self.settings.get('autofill_member_profile'):
+            return {}
+        if not find_profile_fields(regform):
+            return {}
+        return member_profile(registration, management=management)
 
     def _member_email_lock(self, registration=None, *, management=False):
         """The member the e-mail lock applies to here, or ``None``.
@@ -526,17 +569,19 @@ class STSAPlugin(IndicoPlugin):
             return None
 
     def _build_regform_attrs(self, event, regform, management, registration):
-        """The `data-stsa` attribute, or ``None`` when neither feature is on.
+        """The `data-stsa` attribute, or ``None`` when no feature is on.
 
-        Returning no attribute when neither feature is on keeps this plugin
+        Returning no attribute when no feature is on keeps this plugin
         entirely invisible on the forms it is not configured for.
         """
         settings = get_settings(regform)
         discount_on = settings is not None and settings.member_discount_enabled
         group_gate_on = is_group_login_required(regform)
         email_locked = self._member_email_lock(registration, management=management) is not None
-        if not discount_on and not group_gate_on and not email_locked:
+        profile_fields = find_profile_fields(regform) if self.settings.get('autofill_member_profile') else []
+        if not discount_on and not group_gate_on and not email_locked and not profile_fields:
             return None
+        profile = self._member_profile(regform, registration, management=management)
 
         anonymous = not management and session.user is None
         config = {
@@ -565,5 +610,13 @@ class STSAPlugin(IndicoPlugin):
             # which must not put a typed-in address back into a field the
             # participant can no longer correct.
             'lockEmail': email_locked,
+            # Whether the form asks for anything a membership can fill in, so
+            # that a visitor who is signed out is told signing in does it.
+            'profileFields': bool(profile_fields),
+            # The fields that are filled in and locked, by HTML name, for the
+            # draft: restoring what was typed while signed out would put a
+            # value over the account's into a field nobody can correct.
+            'lockedFields': [field.html_field_name for field in profile_fields
+                             if field.input_type in profile],
         }
         return {'data-stsa': json.dumps(config)}

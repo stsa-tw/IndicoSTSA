@@ -19,6 +19,8 @@ const EMPTY = {
   noticeText: '',
   groupLoginRequired: false,
   lockEmail: false,
+  profileFields: false,
+  lockedFields: [],
 };
 
 let cached = null;

@@ -2,7 +2,7 @@
 
 Customizations for the Singapore Taiwanese Student Association.
 
-Seven things, each independently switchable:
+Eight things, each independently switchable:
 
 1. **E-mail subject prefixes.** Every mail Indico sends goes out with STSA's own
    prefix instead of `[Indico]`.
@@ -26,6 +26,9 @@ Seven things, each independently switchable:
 7. **The membership's e-mail address.** A member who is signed in registers
    under the address on their membership, so their registrations can always be
    matched back to them.
+8. **Membership details on the form.** Four field types -- 中文姓名, 英文姓名,
+   就讀科系 and 目前身分 -- that a signed-in member's account fills in and
+   locks, and that anybody else simply types into.
 
 A **member** is anyone signed in. An STSA membership *is* an account on the
 site: there is no membership table and no separate sign-up, so "becoming a
@@ -684,6 +687,108 @@ while signed out would put a value the server refuses into the one field they
 can no longer correct — and core has already filled it in from the account they
 have just signed in with, which is the address they are registering under
 anyway.
+
+## 8. Membership details on the form
+
+On the plugin's admin page, on by default.
+
+**Add field** on a registration form offers four more types, next to *Text
+field* and the rest:
+
+| Type | Filled in from the claim |
+| --- | --- |
+| STSA 中文姓名 | `chinese_name` |
+| STSA 英文姓名 | `english_name` |
+| STSA 就讀科系 | `major` |
+| STSA 目前身分 | `year_of_study` |
+
+Each is a plain text answer — stored, shown in the summary, e-mailed, listed and
+exported like any text field's — and each takes the field's usual settings
+(title, description, required, show-if, retention). The only thing the type
+decides is where the value comes from.
+
+### What the participant sees
+
+- **Signed in, and the account has an answer:** the field arrives filled in and
+  disabled, with core's padlock beside it saying *Filled in from your STSA
+  membership. Sign out to enter something else.*
+- **Signed in, and the account has no answer** for that claim — empty, or never
+  sent — **or not signed in at all:** an ordinary text box. Locking is decided
+  field by field, so a form asking for all four, of a member with no major, locks
+  three.
+
+A visitor who is signed out is told, in the same notice the discount uses, that
+signing in fills these in; the button and the draft that survives the trip to
+the login page are the discount's. Fields the account filled in are *not* put
+back from that draft, since what was typed before signing in is exactly what the
+account now overrides — and a field it had no answer for gets its typed value
+back as usual.
+
+### Where the claims come from
+
+Indico already keeps them. Its authlib identity provider hands the whole of the
+userinfo response to the identity, and every login writes it into
+`Identity.data` — so there is no second request to authentik and nothing for this
+plugin to configure beyond the claim names above. Two things on the authentik
+side decide whether they are there:
+
+- the four claims have to be **emitted** — a scope mapping returning them,
+  attached to the provider;
+- the scope carrying that mapping has to be one **Indico asks for**:
+  `authlib_args['client_kwargs']['scope']` in `IDENTITY_PROVIDERS`.
+
+Values are read from the identity the member **signed in with** in this session,
+and only if it is theirs. A member who has both a password and an authentik
+account and signs in with the password has told the site nothing about
+themselves — that identity carries no claims — so the form is theirs to fill in.
+Impersonation clears the signed-in identity, so an administrator never sees
+somebody else's.
+
+The values are as of the **last login**, because that is when Indico stores
+them. A member whose details changed in authentik sees the old ones until they
+sign in again, and a member who last signed in before the claims were being sent
+has to sign in once more.
+
+### What actually enforces it
+
+The padlock is a courtesy; a hand-built request can carry anything. So after
+core has stored a registration, on creation and on every modification, the
+plugin writes the account's answer over whatever arrived for each field it
+has one for. A member who edits their registration while signed in gets their
+membership as it is now, and the change shows in the e-mail's list of what was
+modified.
+
+Only a value core already decided to keep is touched. A field with no row on the
+registration — hidden by a *show if*, purged, or added after the registration
+was made — is left exactly as core left it, because writing one would put an
+answer on the registration that the form never asked for.
+
+### Not `is_field_data_locked`
+
+Same reasoning as the e-mail address, and the discount field is the contrast.
+`is_field_data_locked` makes core *skip* a field entirely on create and modify,
+which is what lets the discount have this plugin as its only writer — and is why
+it would be wrong here: where there is **no** claim, the field has to be written
+by core like any other. So the padlock is drawn by writing `lockedReason` and
+`autofillValue` into the field data the form is rendered from, and the value is
+written afterwards, on the registration, by the plugin.
+
+### Where it does not apply
+
+The same cases as the membership's e-mail address, for the same reasons, because
+whose form it is is the same question:
+
+- **Organizers** in the management area. Adding a participant means typing
+  *that participant's* details.
+- **Somebody else's registration**, opened from the link in its e-mail. The
+  signed-in member's claims are not that registration's holder's.
+- **An invitation.** The invitee is not necessarily whoever is signed in, so an
+  invited member gets ordinary text boxes. The cost is a few keystrokes, which is
+  the right way round for a feature whose failure mode is "does nothing".
+
+Switching the setting off turns the padlock and the overwrite off together: the
+fields are always ordinary text boxes. The field types themselves stay
+registered either way, so forms that already carry them keep working.
 
 ## Working with the group registration plugin
 

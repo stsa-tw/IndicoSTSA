@@ -33,6 +33,23 @@ function discountSummary({discountRate, discountAppliesTo}) {
       );
 }
 
+/**
+ * The notice's headline: the most valuable thing signing in does here.
+ *
+ * The discount outranks the group gate, which outranks having the details
+ * filled in -- that last one is a convenience, and the others are reasons to
+ * sign in that cost somebody money or a feature if they do not.
+ */
+function noticeHeader({memberDiscount, groupLoginRequired}) {
+  if (memberDiscount) {
+    return Translate.string('Sign in to get the STSA member discount');
+  }
+  if (groupLoginRequired) {
+    return Translate.string('Sign in to register as a group');
+  }
+  return Translate.string('Sign in to fill in your details');
+}
+
 export default function MemberDiscountNotice() {
   const config = getConfig();
   const form = useForm();
@@ -43,7 +60,7 @@ export default function MemberDiscountNotice() {
   if (!config.anonymous || !config.loginUrl) {
     return null;
   }
-  if (!config.memberDiscount && !config.groupLoginRequired) {
+  if (!config.memberDiscount && !config.groupLoginRequired && !config.profileFields) {
     return null;
   }
 
@@ -53,11 +70,7 @@ export default function MemberDiscountNotice() {
           `success` and `error` messages inside a `.ui.form` unless the form
           itself carries that state, and the registration form is one. */}
       <Message info visible>
-        <Message.Header>
-          {config.memberDiscount
-            ? Translate.string('Sign in to get the STSA member discount')
-            : Translate.string('Sign in to register as a group')}
-        </Message.Header>
+        <Message.Header>{noticeHeader(config)}</Message.Header>
         {config.noticeText ? (
           <p>{config.noticeText}</p>
         ) : (
@@ -66,6 +79,13 @@ export default function MemberDiscountNotice() {
             {config.groupLoginRequired && (
               <p>
                 <Translate>Creating or joining a group needs your STSA membership too.</Translate>
+              </p>
+            )}
+            {config.profileFields && (
+              <p>
+                <Translate>
+                  Signing in fills in your details on this form from your STSA membership.
+                </Translate>
               </p>
             )}
           </>

@@ -16,12 +16,20 @@
 // opposite reason to a normal field: an unregistered input type renders as
 // `Unknown input type: ext__stsa_member_discount` wherever a manager sees the
 // form, and this field is internal. See `MemberDiscountField`.
+//
+// The four member-detail fields are registered for the usual reason, and for a
+// sharper one besides: the form editor's "show this field if" dropdown reads
+// the registry for *every* item on the form with no guard for a type nobody
+// registered, so a field type the server puts on a form and this file does not
+// name does not render badly -- it throws, and takes the editor with it.
+// `tests/test_client_registry.py` holds the two lists together.
 
 import {registerPluginComponent, registerPluginObject} from 'indico/utils/plugins';
 
 import GroupLoginGate from './GroupLoginGate';
 import MemberDiscountField from './MemberDiscountField';
 import MemberDiscountNotice from './MemberDiscountNotice';
+import ProfileInput from './ProfileInput';
 import setupWalletBadges from './wallet';
 
 // Plugin field names must start with `ext__`; the core registry rejects
@@ -47,6 +55,38 @@ registerPluginObject('stsa', 'regformCustomFields', {
   noRequired: true,
   noRetentionPeriod: true,
   noInternalName: true,
+});
+
+// The member's own details.  `title` is what the "Add field" dropdown calls the
+// type; `label` is what the new field is called until the organizer says
+// otherwise, which saves them typing the one thing the type already tells us.
+const PROFILE_FIELDS = [
+  {name: 'ext__stsa_chinese_name', title: 'STSA 中文姓名', label: '中文姓名', icon: 'user'},
+  {
+    name: 'ext__stsa_english_name',
+    title: 'STSA 英文姓名',
+    label: '英文姓名',
+    icon: 'sort-alpha-asc',
+  },
+  {name: 'ext__stsa_major', title: 'STSA 就讀科系', label: '就讀科系', icon: 'book'},
+  {
+    name: 'ext__stsa_year_of_study',
+    title: 'STSA 目前身分',
+    label: '目前身分',
+    icon: 'user-reading',
+  },
+];
+
+PROFILE_FIELDS.forEach(({name, title, label, icon}) => {
+  registerPluginObject('stsa', 'regformCustomFields', {
+    name,
+    title,
+    icon,
+    inputComponent: ProfileInput,
+    // Nothing to configure beyond the standard settings: the value is a plain
+    // string and where it comes from is fixed by the type.
+    settingsFormInitialData: {title: label},
+  });
 });
 
 document.addEventListener('DOMContentLoaded', setupWalletBadges);

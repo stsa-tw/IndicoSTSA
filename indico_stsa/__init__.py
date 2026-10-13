@@ -1,6 +1,6 @@
 """Singapore Taiwanese Student Association customizations for Indico.
 
-Seven things STSA needs that core Indico does not provide:
+Eight things STSA needs that core Indico does not provide:
 
 * every outgoing e-mail carries STSA's own subject prefix instead of
   ``[Indico]``;
@@ -18,7 +18,10 @@ Seven things STSA needs that core Indico does not provide:
   still outstanding, each mail naming what that person owes;
 * the registration form's e-mail field held to the address on the membership of
   whoever is signed in, so that the registrations a member makes can always be
-  matched back to them.
+  matched back to them;
+* four registration field types -- 中文姓名, 英文姓名, 就讀科系 and 目前身分 --
+  that a signed-in member's account fills in and locks, and that anybody else
+  types into.
 
 An STSA membership is an account on this site, so a *member* is anyone signed
 in and "becoming a member" is exactly "signing in".

@@ -21,9 +21,16 @@ const EPHEMERAL_FIELDS = ['captcha'];
 //: account, which is the address they are registering under anyway.
 const LOCKED_EMAIL_FIELD = 'email';
 
+//: ...and, the same way, every member-detail field the account has filled in.
+//: What was typed in those before signing in is what the account now overrides,
+//: and `config.lockedFields` -- known to the server only once the participant
+//: *is* signed in -- names exactly the ones that are padlocked.  A field the
+//: account had no answer for is not in it, so what was typed there comes back.
+
 /** The names this draft must not write back into the form. */
 function skippedFields(config) {
-  return config.lockEmail ? [...EPHEMERAL_FIELDS, LOCKED_EMAIL_FIELD] : EPHEMERAL_FIELDS;
+  const skipped = [...EPHEMERAL_FIELDS, ...config.lockedFields];
+  return config.lockEmail ? [...skipped, LOCKED_EMAIL_FIELD] : skipped;
 }
 
 /**

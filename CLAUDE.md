@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds seven
+An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds eight
 independent, default-off customizations for the Singapore Taiwanese Student Association: e-mail
 subject prefixes, a per-registration-form member discount, a members-only gate on group
 registration, the Apple/Google wallet badges, an STSA ticket design with Chinese-capable fonts, an
 Apple Wallet pass drawn in Xcode's Pass Designer, a one-click payment reminder for everybody who
-still owes money, and holding a signed-in member's registration e-mail to the address on their
-membership.
+still owes money, holding a signed-in member's registration e-mail to the address on their
+membership, and four registration field types (中文姓名, 英文姓名, 就讀科系, 目前身分) that a
+signed-in member's account fills in and locks.
 
 `README.md` documents *why* almost every design decision was made — read the relevant section before
 changing behaviour, because most of the odd-looking code is deliberate and the rejected alternatives
@@ -70,6 +71,7 @@ all the unit tests**, while their DB-touching counterparts are exercised only ag
 | [wallet_pass.py](indico_stsa/wallet_pass.py) — the pass's colours, images and fields | `plugin._style_apple_wallet_pass`, `plugin._refine_apple_wallet_ticket` |
 | [reminders.py](indico_stsa/reminders.py) — *who owes*, and what the mail says | [payments.py](indico_stsa/payments.py) — *finding* them |
 | [email_lock.py](indico_stsa/email_lock.py) — *which* field, and *whether* an address is the member's | `util.email_lock_member` — *whom* the lock applies to |
+| [profile.py](indico_stsa/profile.py) — *what* a claim reads as, and the padlock's data | `util.member_profile` — *whose* claims, `handlers.apply_member_profile` — writing them |
 
 [constants.py](indico_stsa/constants.py) holds every shared name so modules that must not import
 each other still agree; [util.py](indico_stsa/util.py) holds lookups, field provisioning and the
@@ -134,6 +136,28 @@ the right membership). Organizers, somebody else's registration opened from its 
 invitations are all carve-outs — see `util.email_lock_member`. The draft skips the e-mail field
 while the lock applies, or it would restore an address the server refuses into a field nobody can
 correct.
+
+### Membership details on the form
+
+Four field types (`ext__stsa_chinese_name`, `_english_name`, `_major`, `_year_of_study`, all in
+`constants.PROFILE_FIELDS` with the claim each is filled from) that a signed-in member's account
+fills in and locks. Plain string fields as far as core is concerned — all the behaviour is around
+them. The claims are **already in the database**: authlib hands the whole userinfo to the identity
+and `process_identity` rewrites `Identity.data` on every login, so there is no call to authentik.
+`util.member_profile` reads the identity in `session['login_identity']` (and only if it is the
+user's own), and asks `email_lock_member` whose form it is, so organizers, somebody else's
+registration and invitations are the same carve-outs as the e-mail lock.
+
+Same padlock mechanism as the e-mail (`lockedReason` in the flat submission data, **not**
+`is_field_data_locked`, which would make core skip the field where there is no claim) plus
+`autofillValue`, which `ProfileInput.jsx` writes into the form. The server is the authority:
+`handlers.apply_member_profile` runs on `registration_created`/`_updated` and overwrites the stored
+value — but only on a row core already kept, so a field hidden by a condition or purged is not
+revived. Locking is per field: a claim that is absent or blank leaves its field open.
+
+All four types **must** be named in `client/js/index.jsx`, or core's form editor crashes on them;
+`tests/test_client_registry.py` holds the two lists together. The draft skips `config.lockedFields`
+so a value typed while signed out cannot be restored over the account's.
 
 ### Client side
 

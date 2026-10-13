@@ -9,6 +9,24 @@ MEMBER_DISCOUNT_FIELD = 'ext__stsa_member_discount'
 MEMBER_DISCOUNT_FIELD_TITLE = 'Member discount'
 MEMBER_DISCOUNT_SECTION_TITLE = 'Member discount (internal)'
 
+#: The member's own details, as registration field types, each mapped to the
+#: claim of the signed-in account it is filled in from.  Same ``ext__`` rule as
+#: the discount field.  The claim names are the ones the identity provider
+#: emits (see `indico_stsa.profile`); the titles an organizer sees are the
+#: client's business, in `client/js/index.jsx`, and every name here has to be
+#: registered there too or core's form editor crashes on it.
+CHINESE_NAME_FIELD = 'ext__stsa_chinese_name'
+ENGLISH_NAME_FIELD = 'ext__stsa_english_name'
+MAJOR_FIELD = 'ext__stsa_major'
+YEAR_OF_STUDY_FIELD = 'ext__stsa_year_of_study'
+
+PROFILE_FIELDS = {
+    CHINESE_NAME_FIELD: 'chinese_name',
+    ENGLISH_NAME_FIELD: 'english_name',
+    MAJOR_FIELD: 'major',
+    YEAR_OF_STUDY_FIELD: 'year_of_study',
+}
+
 #: The group registration plugin, which this one integrates with when it is
 #: installed.  Referred to by name rather than imported: it is an optional
 #: companion, not a dependency.

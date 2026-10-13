@@ -5,7 +5,7 @@ from indico.util.i18n import _
 
 from indico_stsa.constants import GROUP_MODES_WITH_GROUP, GROUP_PLAN_FIELD, MEMBER_DISCOUNT_FIELD
 from indico_stsa.pricing import apply_member_discount
-from indico_stsa.util import find_field, is_group_login_required, registration_is_member
+from indico_stsa.util import find_field, find_profile_fields, is_group_login_required, registration_is_member
 
 
 def handle_registration_created(registration, data=None, management=False):
@@ -89,3 +89,39 @@ def get_locked_field_reason(form_item, registration):
     if form_item.input_type == MEMBER_DISCOUNT_FIELD:
         return _('This is set automatically by the STSA plugin.')
     return None
+
+
+def apply_member_profile(registration, profile):
+    """Write the member's own details over what was submitted for them.
+
+    This is the half of the lock that enforces it: the padlock on the form is a
+    courtesy, and a hand-built request can carry anything.  So whatever
+    arrived for a field the account has an answer for is replaced with that
+    answer, on creation and on every later modification -- a member who edits
+    their registration signed in gets their membership as it is now, and the
+    notification's diff says so.
+
+    Only a value core has already decided to keep is touched.  A field that has
+    no row on this registration is one core left out on purpose -- hidden by a
+    condition, purged, or never answered because it was added afterwards -- and
+    writing one here would put an answer on the registration that the form did
+    not ask for.
+
+    :param profile: ``{input type: text}``, from `indico_stsa.util.member_profile`.
+    :return: how many values were changed.
+    """
+    if not profile:
+        return 0
+    changed = 0
+    data_by_field = registration.data_by_field
+    for field in find_profile_fields(registration.registration_form):
+        value = profile.get(field.input_type)
+        row = data_by_field.get(field.id)
+        if value is None or row is None or field.is_purged or row.data == value:
+            continue
+        # Point at the current version as core's own `process_form_data` does,
+        # so the row does not go on pinning an old one.
+        row.field_data = field.current_data
+        row.data = value
+        changed += 1
+    return changed

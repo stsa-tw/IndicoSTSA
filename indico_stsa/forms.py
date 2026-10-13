@@ -53,6 +53,13 @@ class STSASettingsForm(IndicoForm):
                       'back to them. Any address on the account is accepted, not only the first. Organizers adding '
                       'registrations, and invitations addressed to somebody by an organizer, are not affected.'))
 
+    autofill_member_profile = BooleanField(
+        _("Fill in the member's details"), widget=SwitchWidget(),
+        description=_('Fills the 中文姓名, 英文姓名, 就讀科系 and 目前身分 fields on a registration form in from the '
+                      'claims the signed-in account arrived with (chinese_name, english_name, major, '
+                      'year_of_study), and locks each one that was. Signed out, or without the claim, they are '
+                      'ordinary text boxes. Switched off, they are always ordinary text boxes.'))
+
     def validate_email_subject_prefix(self, field):
         if field.data and len(field.data) > 60:
             raise ValidationError(_('That prefix is too long for an e-mail subject.'))

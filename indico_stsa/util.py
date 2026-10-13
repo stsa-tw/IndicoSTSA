@@ -5,13 +5,15 @@ from sqlalchemy import inspect as sa_inspect
 
 from indico.core.db import db
 from indico.core.logger import Logger
+from indico.modules.auth.models.identities import Identity
 from indico.modules.events.registration.models.form_fields import RegistrationFormField
 from indico.modules.events.registration.models.items import RegistrationFormSection
 
 from indico_stsa.constants import (GROUP_MODES_WITH_GROUP, GROUP_PLAN_FIELD, GROUP_PLUGIN, MEMBER_DISCOUNT_FIELD,
-                                  MEMBER_DISCOUNT_FIELD_TITLE, MEMBER_DISCOUNT_SECTION_TITLE)
+                                  MEMBER_DISCOUNT_FIELD_TITLE, MEMBER_DISCOUNT_SECTION_TITLE, PROFILE_FIELDS)
 from indico_stsa.models import SCHEMA
 from indico_stsa.models.settings import STSASettings
+from indico_stsa.profile import profile_values
 
 
 logger = Logger.get('plugin.stsa')
@@ -200,6 +202,56 @@ def email_lock_member(registration=None, *, management=False):
     if registration is not None and registration.user != session.user:
         return None
     return session.user
+
+
+# -- the member's own details ------------------------------------------------
+
+def find_profile_fields(regform):
+    """The fields on a form that a member's account fills in.
+
+    Only the participant's own: a field in a manager-only section is never
+    shown to a participant, so there is nobody to fill it in on behalf of.
+    """
+    return [item for item in regform.active_fields
+            if item.input_type in PROFILE_FIELDS and not item.parent.is_manager_only]
+
+
+def login_identity(user):
+    """The identity `user` signed in with in this session -- where their claims are.
+
+    That one and no other, so the details on a form are those of the account
+    actually in use.  A member who has an authentik account as well as a password
+    and signs in with the password has told the site nothing about themselves:
+    their local identity carries no claims, and the form is theirs to fill in.
+
+    It also has to be the user's own.  Impersonation clears the session's identity
+    so an administrator cannot arrive here with somebody else's, but one more
+    comparison is cheaper than that staying true.
+    """
+    identity_id = session.get('login_identity') if has_request_context() else None
+    if identity_id is None:
+        return None
+    identity = Identity.get(identity_id)
+    if identity is None or identity.user_id != user.id:
+        return None
+    return identity
+
+
+def member_profile(registration=None, *, management=False):
+    """What the signed-in member's account says about them, by field type.
+
+    ``{}`` means nothing to fill in and nothing to lock.  Whose form this is is
+    the e-mail lock's question, and its answer is used as it stands: organizers,
+    somebody else's registration and invitations get ordinary text boxes, which
+    is what this feature does when it does not apply.
+    """
+    member = email_lock_member(registration, management=management)
+    if member is None:
+        return {}
+    identity = login_identity(member)
+    if identity is None:
+        return {}
+    return profile_values(identity.data)
 
 
 # -- field provisioning ------------------------------------------------------
