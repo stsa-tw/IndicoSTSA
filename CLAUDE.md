@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds eight
+An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds nine
 independent, default-off customizations for the Singapore Taiwanese Student Association: e-mail
 subject prefixes, a per-registration-form member discount, a members-only gate on group
 registration, the Apple/Google wallet badges, an STSA ticket design with Chinese-capable fonts, an
@@ -72,6 +72,7 @@ all the unit tests**, while their DB-touching counterparts are exercised only ag
 | [reminders.py](indico_stsa/reminders.py) — *who owes*, and what the mail says | [payments.py](indico_stsa/payments.py) — *finding* them |
 | [email_lock.py](indico_stsa/email_lock.py) — *which* field, and *whether* an address is the member's | `util.email_lock_member` — *whom* the lock applies to |
 | [profile.py](indico_stsa/profile.py) — *what* a claim reads as, and the padlock's data | `util.member_profile` — *whose* claims, `handlers.apply_member_profile` — writing them |
+| [names.py](indico_stsa/names.py) — what a name is, the form without First/Last name, injecting them | `util.disabled_names` — *whether* they are off, [default_names.py](indico_stsa/default_names.py) — the wrappers of core, `handlers.sync_default_names` — writing them |
 
 [constants.py](indico_stsa/constants.py) holds every shared name so modules that must not import
 each other still agree; [util.py](indico_stsa/util.py) holds lookups, field provisioning and the
@@ -142,8 +143,15 @@ correct.
 Four field types (`ext__stsa_chinese_name`, `_english_name`, `_major`, `_year_of_study`, all in
 `constants.PROFILE_FIELDS` with the claim each is filled from) that a signed-in member's account
 fills in and locks. Plain string fields as far as core is concerned — all the behaviour is around
-them. The claims are **already in the database**: authlib hands the whole userinfo to the identity
-and `process_identity` rewrites `Identity.data` on every login, so there is no call to authentik.
+them. The claims reach `Identity.data` at login, and **Indico drops them by default**: every
+identity provider builds its data through `identity_info_keys`, which Indico sets to the user fields
+it syncs, so `chinese_name` never arrives. `plugin._keep_profile_claims` wraps each provider's
+`get_identity_from_auth` at `app_created` and `profile.keep_profile_claims` copies the four across
+from `AuthInfo.data`, gated on the admin switch at login time. Tests that write `Identity.data`
+directly **bypass this** — 0.4.0 shipped broken because the e2e did; only a real OIDC round trip
+(see the harness memory) proves it. With the `openid` scope Indico reads the **ID token**, not the
+userinfo endpoint (`use_id_token`), so claims that authentik leaves out of it never arrive at all;
+`profile.no_claims_sent` makes the login wrapper log the claim *names* that did arrive, never values.
 `util.member_profile` reads the identity in `session['login_identity']` (and only if it is the
 user's own), and asks `email_lock_member` whose form it is, so organizers, somebody else's
 registration and invitations are the same carve-outs as the e-mail lock.
@@ -157,7 +165,43 @@ revived. Locking is per field: a claim that is absent or blank leaves its field 
 
 All four types **must** be named in `client/js/index.jsx`, or core's form editor crashes on them;
 `tests/test_client_registry.py` holds the two lists together. The draft skips `config.lockedFields`
-so a value typed while signed out cannot be restored over the account's.
+so a value typed while signed out cannot be restored over the account's, and skips blank values so an
+empty first name cannot be restored over the one core filled in from it.
+
+The new field's title is prefilled by `PrefilledTitle.jsx`, **not** `settingsFormInitialData`: core's
+"Add new field" dialog keeps *Submit* disabled until the form is dirty, so an initial value that is
+already valid left the button dead until the organizer changed something. It writes the title one
+tick after mount because the dialog's content and its button mount in the same commit and
+`useFormState` drops the first notification — a change made in between never reaches the button.
+
+### First and Last name, switched off
+
+Core will not let First/Last name be disabled: `PersonalDataType.is_required`, the `pd_field_enabled`
+check constraint, a non-null `Registration.first_name`, participant-list columns that look them up as
+active fields. So they are **never** disabled — the switch is `first_name_disabled`/`last_name_disabled`
+on `STSASettings`, and `default_names.py` makes the rest behave like it. Wrapped in core, once, in
+`plugin.init`: `RegistrationFormPersonalDataField.view_data` (drops `fieldIsRequired`, reports
+`isEnabled: False` — that is what gives the editor its *Disable* button and the greyed look) and
+`RHRegistrationFormToggleFieldState._process` (which refuses required fields). Both fall through to
+core for anything that is not First/Last name on a form with the English/Chinese name field
+(`NAME_SOURCES`: English → first, Chinese → last, so the full name reads English first).
+
+`get_flat_section_submission_data` is intercepted to drop the two items and mark the supplying field
+required; the schema's `schema_pre_load` signal (sender is the dynamic `RegistrationSchemaBase`
+subclass, so the form is found from `request.view_args['reg_form_id']`) overwrites
+`first_name`/`last_name` from the submitted names *before* core validates — core parses twice, so
+`names.inject_names` is idempotent, and an **absent** source is skipped (a modification that did not
+touch it) while a **blank** one raises a `ValidationError` on the visible field.
+`handlers.sync_default_names` runs after `apply_member_profile` and writes the columns *and* the answer
+rows. `util.disabled_names` rechecks the source on every call, and the field-changed/-toggled/-deleted
+receivers clear the switch when the source goes (core announces a delete *before* it happens).
+Position: a switched-off field is moved after the enabled ones, because the editor draws it with the
+disabled fields and counts drag positions without it.
+
+If you touch this, know what it was tested against: the editor toggle, a member's registration through a
+real OIDC login, management *Add registrant* (blank English name refused on `field_13`), a management
+modification that sent only the Chinese name, the switch released by disabling the English name, and a
+*show if* on Last Name removed again on save. None of it has unit coverage beyond `names.py`.
 
 ### Client side
 
@@ -243,7 +287,9 @@ independent of signal-handler ordering.
 - Every read of the plugin's own table goes through `util.tables_exist()`, which asks the inspector
   rather than letting the query fail (a failed statement aborts the whole transaction). An install
   where `indico db --plugin stsa upgrade` was never run has to degrade to "nothing configured" --
-  it used to 500 the participant's registration form, not just the management pages.
+  it used to 500 the participant's registration form, not just the management pages. It also checks
+  for the newest migration's column (`util.NEWEST_COLUMN`): a table that exists but predates an
+  update fails every query the same way. **Move that constant whenever a migration adds a column.**
 - Ruff config in [ruff.toml](ruff.toml) mirrors Indico core: single quotes, 120 columns, **isort is
   deliberately off** — match core's grid-style import wrapping by hand.
 - All models must live in the `plugin_stsa` schema ([models/__init__.py](indico_stsa/models/__init__.py));

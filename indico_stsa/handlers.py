@@ -1,11 +1,15 @@
 """What the plugin does when Indico tells it something happened."""
 
 from indico.core.errors import UserValueError
+from indico.modules.events.registration.models.items import PersonalDataType
+from indico.modules.events.registration.models.registrations import RegistrationData
 from indico.util.i18n import _
 
 from indico_stsa.constants import GROUP_MODES_WITH_GROUP, GROUP_PLAN_FIELD, MEMBER_DISCOUNT_FIELD
+from indico_stsa.names import clean_name
 from indico_stsa.pricing import apply_member_discount
-from indico_stsa.util import find_field, find_profile_fields, is_group_login_required, registration_is_member
+from indico_stsa.util import (disabled_names, find_field, find_profile_fields, is_group_login_required,
+                              registration_is_member)
 
 
 def handle_registration_created(registration, data=None, management=False):
@@ -124,4 +128,51 @@ def apply_member_profile(registration, profile):
         row.field_data = field.current_data
         row.data = value
         changed += 1
+    return changed
+
+
+def sync_default_names(registration):
+    """Make First and Last name what the membership fields say, where they are switched off.
+
+    The names arrive in the submission already -- `indico_stsa.default_names`
+    puts them there before core reads it -- so this is not what *gets* them
+    onto the registration.  It is what keeps them right afterwards: it runs
+    after `apply_member_profile`, which may have replaced the English or the
+    Chinese name with the account's, and it runs on every modification, where
+    a request that left a name out would otherwise leave an old one in.
+
+    The registration's own columns and the answer rows are both written, since
+    core reads the first for the name it shows and the second for everything
+    else, and they must not disagree.
+
+    :return: how many of the two fields were changed.
+    """
+    regform = registration.registration_form
+    sources = disabled_names(regform)
+    if not sources:
+        return 0
+    data_by_field = registration.data_by_field
+    changed = 0
+    for name, source in sources.items():
+        answer = data_by_field.get(source.id)
+        text = clean_name(answer.data if answer else None)
+        field = regform.get_personal_data_field(PersonalDataType[name])
+        if text is None or field is None:
+            continue
+        touched = False
+        if getattr(registration, name) != text:
+            setattr(registration, name, text)
+            touched = True
+        row = data_by_field.get(field.id)
+        if row is None:
+            # Passing `registration=` already puts the row into
+            # `registration.data`; appending it as well would list it twice.
+            row = RegistrationData(registration=registration, field_data=field.current_data)
+            row.data = text
+            touched = True
+        elif row.data != text:
+            row.field_data = field.current_data
+            row.data = text
+            touched = True
+        changed += touched
     return changed

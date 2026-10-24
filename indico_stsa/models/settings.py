@@ -66,6 +66,21 @@ class STSASettings(db.Model):
         default=False
     )
 
+    #: Whether the default *First name* field is switched off, so that the
+    #: registrant's English name stands in for it.  Only has an effect while
+    #: the form has that field -- see `indico_stsa.util.disabled_names`.
+    first_name_disabled = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+    #: Likewise for *Last name*, and the Chinese name.
+    last_name_disabled = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
     registration_form = db.relationship(
         'RegistrationForm',
         lazy=True,

@@ -27,6 +27,16 @@ PROFILE_FIELDS = {
     YEAR_OF_STUDY_FIELD: 'year_of_study',
 }
 
+#: The default name fields an organizer may switch off once the form has the
+#: member-detail field that stands in for them, by the personal data type's name
+#: -- which is also the field's HTML name -- and mapped to that field's type.  A
+#: registrant's English name is their first name and their Chinese name their
+#: last, so the full name reads English first, the way it does on the membership.
+NAME_SOURCES = {
+    'first_name': ENGLISH_NAME_FIELD,
+    'last_name': CHINESE_NAME_FIELD,
+}
+
 #: The group registration plugin, which this one integrates with when it is
 #: installed.  Referred to by name rather than imported: it is an optional
 #: companion, not a dependency.

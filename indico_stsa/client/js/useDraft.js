@@ -6,7 +6,7 @@
 
 import {useCallback, useEffect, useRef} from 'react';
 
-import {clearDraft, saveDraft, takeDraft} from './draft';
+import {clearDraft, isBlank, saveDraft, takeDraft} from './draft';
 
 //: Values that must never come back from a draft.  A captcha answer is only
 //: valid for the challenge that was on screen when it was typed, and after a
@@ -26,6 +26,11 @@ const LOCKED_EMAIL_FIELD = 'email';
 //: and `config.lockedFields` -- known to the server only once the participant
 //: *is* signed in -- names exactly the ones that are padlocked.  A field the
 //: account had no answer for is not in it, so what was typed there comes back.
+//:
+//: Blank answers are not restored at all.  The draft is taken of everything on
+//: the page, empty fields included, and an empty first name put back over the
+//: one core has just filled in from the account is the draft undoing the sign-in
+//: it was kept for.
 
 /** The names this draft must not write back into the form. */
 function skippedFields(config) {
@@ -93,7 +98,7 @@ export function useDraft(config, form) {
     const timeout = setTimeout(() => {
       form.batch(() => {
         Object.entries(values).forEach(([name, value]) => {
-          if (!skipped.includes(name)) {
+          if (!skipped.includes(name) && !isBlank(value)) {
             form.change(name, value);
           }
         });

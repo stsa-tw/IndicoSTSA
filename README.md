@@ -2,7 +2,7 @@
 
 Customizations for the Singapore Taiwanese Student Association.
 
-Eight things, each independently switchable:
+Nine things, each independently switchable:
 
 1. **E-mail subject prefixes.** Every mail Indico sends goes out with STSA's own
    prefix instead of `[Indico]`.
@@ -29,6 +29,10 @@ Eight things, each independently switchable:
 8. **Membership details on the form.** Four field types -- 中文姓名, 英文姓名,
    就讀科系 and 目前身分 -- that a signed-in member's account fills in and
    locks, and that anybody else simply types into.
+9. **First and Last name, switched off.** On a form that has 英文姓名 and 中文姓名,
+   the default *First name* and *Last name* fields get the *Disable* button
+   Indico withholds from them, and a registrant's name becomes the English name
+   followed by the Chinese one.
 
 A **member** is anyone signed in. An STSA membership *is* an account on the
 site: there is no membership table and no separate sign-up, so "becoming a
@@ -60,7 +64,10 @@ plugin reads as *nothing configured*: the member discount and the group gate
 are off, registration forms and e-mails behave exactly as they would with the
 plugin uninstalled, and the STSA pages in the management area say what is
 missing and print the command above instead of failing. The same line goes to
-the server log once per process.
+the server log once per process. The same goes for a database that has the
+tables but not the newest column -- an update that was installed and not
+upgraded -- so **run the command again after every update that says it has a
+migration.**
 
 Released wheels carry the compiled webpack bundle. Installing straight from a
 git checkout does not — see [Building the assets](#building-the-assets).
@@ -707,6 +714,14 @@ exported like any text field's — and each takes the field's usual settings
 (title, description, required, show-if, retention). The only thing the type
 decides is where the value comes from.
 
+The dialog opens with the title already filled in (中文姓名, 英文姓名, …) and the
+*Submit* button live. That is not `settingsFormInitialData`, which is what it
+looks like it should be: Indico keeps that button disabled until the form is
+*dirty*, and a form that starts from its initial values is pristine, so a field
+whose title arrived filled in came with a button nobody could press until they
+changed something. The title is written once the dialog exists instead, which
+final-form counts as a change.
+
 ### What the participant sees
 
 - **Signed in, and the account has an answer:** the field arrives filled in and
@@ -722,20 +737,51 @@ signing in fills these in; the button and the draft that survives the trip to
 the login page are the discount's. Fields the account filled in are *not* put
 back from that draft, since what was typed before signing in is exactly what the
 account now overrides — and a field it had no answer for gets its typed value
-back as usual.
+back as usual. Blank answers are not put back at all: the draft is taken of
+every field on the page, and an empty first name restored over the one Indico
+has just filled in from the account would be the draft undoing the sign-in it
+was kept for.
 
 ### Where the claims come from
 
-Indico already keeps them. Its authlib identity provider hands the whole of the
-userinfo response to the identity, and every login writes it into
-`Identity.data` — so there is no second request to authentik and nothing for this
-plugin to configure beyond the claim names above. Two things on the authentik
-side decide whether they are there:
+From the login itself, kept in `Identity.data` — so there is no second request to
+authentik. Four things decide whether they are there:
 
 - the four claims have to be **emitted** — a scope mapping returning them,
   attached to the provider;
 - the scope carrying that mapping has to be one **Indico asks for**:
-  `authlib_args['client_kwargs']['scope']` in `IDENTITY_PROVIDERS`.
+  `authlib_args['client_kwargs']['scope']` in `AUTH_PROVIDERS`;
+- they have to be in the part of the response **Indico reads**. With the
+  `openid` scope that is the ID token, not the userinfo endpoint — so authentik's
+  *Include claims in id_token* has to be on (it is by default), or
+  `'use_id_token': False` set on the provider in `AUTH_PROVIDERS` to read the
+  userinfo endpoint instead;
+- they have to get **past Indico's identity filter**, which the plugin does.
+
+That last one is easy to get wrong and was got wrong in 0.4.0. An identity
+provider receives every claim, but builds the identity's data through
+`identity_info_keys`, and Indico sets that to the user fields it synchronizes
+(`first_name`, `last_name`, `email`, `affiliation`, `phone`, `address`,
+`affiliation_data`). Anything else — `chinese_name` included — is dropped before
+the identity exists, so the fields stayed empty for everybody while the provider
+was sending every claim there was.
+
+So at start-up the plugin wraps each identity provider's
+`get_identity_from_auth` (except Indico's own password login), and at every login
+copies the four claims from the provider's response onto the identity, when
+**Fill in the member's details** is on. Nothing else in the response is kept —
+`school`, `groups` and the rest are not this plugin's to store — and a claim the
+filter already let through is left alone. An operator who would rather say so
+explicitly can add the four names to `identity_info_keys` in `IDENTITY_PROVIDERS`;
+the two together are harmless. Note that setting it *replaces* Indico's list, so
+the defaults above have to be included.
+
+To see what a login actually kept, look in `indico.log` for the `Received identity
+info` line: the four claims are in it, or they are not. When a login carried
+*none* of them the plugin says so in the same log, naming the claims the
+response *did* carry — which is how to tell a missing scope mapping from a scope
+Indico does not ask for from claims sitting in the wrong half of the response.
+Only names are logged, never values.
 
 Values are read from the identity the member **signed in with** in this session,
 and only if it is theirs. A member who has both a password and an authentik
@@ -746,7 +792,7 @@ somebody else's.
 
 The values are as of the **last login**, because that is when Indico stores
 them. A member whose details changed in authentik sees the old ones until they
-sign in again, and a member who last signed in before the claims were being sent
+sign in again, and a member who last signed in before the claims were being kept
 has to sign in once more.
 
 ### What actually enforces it
@@ -789,6 +835,82 @@ whose form it is is the same question:
 Switching the setting off turns the padlock and the overwrite off together: the
 fields are always ordinary text boxes. The field types themselves stay
 registered either way, so forms that already carry them keep working.
+
+## 9. First and Last name, switched off
+
+On by default, and there is nothing to configure beyond adding the fields.
+
+Indico asks for a *First name* and a *Last name* on every form and gives no way
+to switch either off: they are required, always enabled, and the database has
+a constraint to say so. On a form that already asks for 英文姓名 and 中文姓名 that
+is the same question twice. So once a form has an English name field, its
+**First Name** gets the *Disable* button every optional field has, and once it
+has a Chinese name field, so does **Last Name**. Each switches off
+independently:
+
+| Field switched off | Is supplied by |
+| --- | --- |
+| First Name | STSA 英文姓名 |
+| Last Name | STSA 中文姓名 |
+
+A switched-off field is drawn with the disabled fields in the editor, with an
+*Enable* button, and the participant is not asked for it — on the registration
+form, and in the management area's *Add registrant* form. The registration's
+name is the English name followed by the Chinese one (`Xiao-Ming Wang 王小明`),
+which is what the ticket, the badge, the e-mails and every list print. Re-enabling
+the field brings it back; it is put at the end of its section, where Indico puts
+any field that is enabled again.
+
+The English or Chinese name **has to be filled in** once the other field is off:
+the participant is shown it as required, and a registration that arrives
+without it is refused with *This field is required* on that field — not on the
+one nobody can see. A member whose account supplies the name has it filled in and
+locked like any other membership detail, and that is what the registration is
+named after.
+
+### Why they are not really disabled
+
+They cannot be, and not because of the editor. `PersonalDataType.is_required` is
+checked by the endpoint that toggles a field, a database constraint
+(`pd_field_enabled`) forbids the row, `Registration.first_name` is not nullable,
+and the participant list's default columns look both fields up as *active* ones.
+A plugin that made them genuinely disabled would be changing a core table's
+constraint and then finding out, one registration at a time, what else relied on
+it — and a form left with them disabled would be unable to register anybody once
+the plugin was gone.
+
+So the fields stay exactly as core has them — enabled and required — and the
+switch is the plugin's own, stored on the form's STSA settings. Three things
+make it behave like a disabled field:
+
+- **The editor.** Two things in core are wrapped: the `view_data` of a personal
+  data field, which is what decides whether it gets a *Disable* button and where it
+  is drawn, and the endpoint behind that button, which refuses a required field.
+  Both do exactly what core does for everything that is not First or Last name on a
+  form that has the field to stand in for it.
+- **The form.** The two fields are taken out of what a participant is shown, and
+  the field that supplies the name is shown as required.
+- **The submission.** Before core validates it, the English and Chinese names are
+  written over `first_name` and `last_name`, whatever the form sent — it is
+  prefilled from the Indico account, and a hand-built request can say anything. After
+  the registration is stored, and after the membership details are written over
+  the submission, the same names are written again onto the registration and its
+  answers, so the two can never disagree. A modification that did not touch the
+  name leaves the name alone.
+
+The switch is only ever as good as the field behind it. Deleting or disabling the
+English name from a form that has First name switched off switches First name back
+on, because a form with no name on it is not what anybody asked for; and so does
+giving the field a *show if*, since a name that appears only sometimes is a
+registration with none. First and Last name themselves cannot be given a *show if*
+either: it is taken off again when the field is saved, which is what core's editor
+hides the setting for in the first place.
+
+An editor that was open when that happened still shows First name as switched off
+until it is reloaded; pressing *Enable* on it is answered as the success it is.
+
+The switch needs the plugin's newest column. Like everything else here it reads
+as *off* without it — see [Installing](#installing).
 
 ## Working with the group registration plugin
 

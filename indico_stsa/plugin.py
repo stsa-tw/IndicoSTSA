@@ -4,8 +4,10 @@ import json
 
 from flask import before_render_template, request, session
 from markupsafe import escape
+from marshmallow import ValidationError
 
 from indico.core import signals
+from indico.core.auth import multipass
 from indico.core.notifications import make_email
 from indico.core.plugins import IndicoPlugin, get_plugin_template_module, url_for_plugin
 from indico.modules.auth.util import url_for_login
@@ -18,20 +20,23 @@ from indico.util.signals import interceptable_sender
 from indico.web.menu import SideMenuItem
 
 from indico_stsa.blueprint import blueprint
-from indico_stsa.constants import DEFAULT_SUBJECT_PREFIX
+from indico_stsa.constants import DEFAULT_SUBJECT_PREFIX, PROFILE_FIELDS
+from indico_stsa.default_names import install as install_default_names
+from indico_stsa.default_names import name_sources, release_names, supply_names, unconditional
 from indico_stsa.discount import format_rate
 from indico_stsa.email_lock import foreign_email_error, is_membership_address, lock_email_field
 from indico_stsa.emails import rewrite_subject
 from indico_stsa.fields import PROFILE_FIELD_CLASSES, MemberDiscountField
 from indico_stsa.forms import STSASettingsForm
 from indico_stsa.group_preview import quote_member_price
+from indico_stsa.names import hide_default_names
 from indico_stsa.handlers import (apply_member_profile, get_locked_field_reason, handle_registration_created,
-                                   handle_registration_updated)
+                                   handle_registration_updated, sync_default_names)
 from indico_stsa.emoji import draw_item_on_badge
 from indico_stsa.fonts import update_badge_style
 from indico_stsa.payments import OutstandingAmountPlaceholder, find_unpaid
 from indico_stsa.pricing import preview_base_price
-from indico_stsa.profile import autofill_profile_fields
+from indico_stsa.profile import autofill_profile_fields, keep_profile_claims, no_claims_sent
 from indico_stsa.reglist import REGLIST_FILTER_TEMPLATE, hide_internal_columns
 from indico_stsa.ticket_email import add_wallet_badges
 from indico_stsa.util import (email_lock_member, find_profile_fields, get_settings, is_group_login_required,
@@ -118,6 +123,28 @@ class STSAPlugin(IndicoPlugin):
         # registration alike.  See `indico_stsa.email_lock` for why the lock is
         # deliberately *not* `is_field_data_locked`.
         self.connect(signals.event.before_check_registration_email, self._before_check_registration_email)
+
+        # The details a member's account fills in arrive as claims from the
+        # identity provider, and Indico's identity providers drop every claim
+        # that is not one of the user fields it synchronizes.  Identity
+        # providers are built before plugins are loaded and are not ours, so
+        # the one place to step in is once the app exists.  See
+        # `indico_stsa.profile` for what is kept and why.
+        self.connect(signals.core.app_created, self._keep_profile_claims)
+
+        # First and Last name can be switched off once the form has the English
+        # and Chinese name fields.  Core has no hook for any of it, so two
+        # things in it are wrapped; see `indico_stsa.default_names`.  The
+        # receivers keep the switch honest as fields come and go, and fill in
+        # the names core requires from the fields that stand in for them.
+        try:
+            install_default_names()
+        except Exception:
+            self.logger.exception('Could not make First and Last name switchable; they stay as core has them')
+        self.connect(signals.plugin.schema_pre_load, self._schema_pre_load)
+        self.connect(signals.event.registration_form_field_changed, self._field_changed)
+        self.connect(signals.event.registration_form_field_toggled, self._field_toggled)
+        self.connect(signals.event.registration_form_field_deleted, self._field_deleted)
 
         # -- management UI ---------------------------------------------------
         self.connect(signals.menu.items, self._sidemenu_items, sender='event-management-sidemenu')
@@ -360,7 +387,7 @@ class STSAPlugin(IndicoPlugin):
         self._fill_in_profile(registration, management=management)
 
     def _fill_in_profile(self, registration, *, management=False):
-        """Write the member's own details over what the form submitted.
+        """Write the member's own details over what the form submitted, and the name from them.
 
         Guarded on its own, and after the gate and the discount rather than
         with them: those may raise on purpose, to refuse a registration, and
@@ -373,18 +400,66 @@ class STSAPlugin(IndicoPlugin):
             apply_member_profile(registration, profile)
         except Exception:
             self.logger.exception('Could not fill in the member details of %r', registration)
+        # After the details are written, since they are what the names are
+        # made from; and on its own, because the names matter whether or not
+        # a membership said anything.
+        try:
+            sync_default_names(registration)
+        except Exception:
+            self.logger.exception('Could not make the name of %r what its membership fields say', registration)
 
     def _is_field_data_locked(self, sender, registration=None, **kwargs):
         return get_locked_field_reason(sender, registration)
 
+    def _schema_pre_load(self, sender, data=None, **kwargs):
+        """Give core the First and Last name it requires, from the fields that stand in for them.
+
+        This sees every schema in the instance and answers only for the
+        registration form's.  A blank name is the one thing it refuses, and
+        that is a ``ValidationError`` on purpose: it is what turns into the
+        message beside the field.  Anything else going wrong leaves the
+        submission as it arrived, which for a form with the names switched off
+        is a registration refused for a missing name -- a loud failure, and a
+        better one than a registration with the wrong one.
+        """
+        try:
+            supply_names(sender, data)
+        except ValidationError:
+            raise
+        except Exception:
+            self.logger.exception('Could not supply the name of a registration from its membership fields')
+
+    def _field_changed(self, sender, **kwargs):
+        """Keep the name switches meaningful when a field is edited."""
+        try:
+            unconditional(sender)
+            release_names(sender)
+        except Exception:
+            self.logger.exception('Could not keep the name switches in step with a changed field')
+
+    def _field_toggled(self, sender, **kwargs):
+        """Switch First and Last name back on when the field standing in for one is disabled."""
+        try:
+            release_names(sender)
+        except Exception:
+            self.logger.exception('Could not keep the name switches in step with a toggled field')
+
+    def _field_deleted(self, sender, **kwargs):
+        """...and when it is deleted.  Core announces that before it happens."""
+        try:
+            release_names(sender, deleting=True)
+        except Exception:
+            self.logger.exception('Could not keep the name switches in step with a deleted field')
+
     def _intercept_submission_data(self, sender, func=None, args=None, **kwargs):
         """Fix up the data the participant's registration form is rendered from.
 
-        Three things are written into it: the price the group plugin's plan
-        picker quotes, the padlock on the e-mail field of a member who is
-        signed in, and the member's own details in the fields made for them.
-        They are guarded separately because they have nothing to do with each
-        other, and losing all of them because one raised would be a poor trade.
+        Four things are done to it: the price the group plugin's plan picker
+        quotes, the padlock on the e-mail field of a member who is signed in,
+        the member's own details in the fields made for them, and taking First
+        and Last name off a form that has them switched off.  They are guarded
+        separately because they have nothing to do with each other, and losing
+        all of them because one raised would be a poor trade.
 
         Building the form data is the original function's job either way, so it
         is called first and its result handed back whatever happens next: this
@@ -413,6 +488,11 @@ class STSAPlugin(IndicoPlugin):
                 autofill_profile_fields(form_data, profile)
         except Exception:
             self.logger.exception('Could not fill in the member details on the registration form')
+        try:
+            if sources := name_sources(regform):
+                hide_default_names(form_data, sources)
+        except Exception:
+            self.logger.exception('Could not take the switched-off name fields off the registration form')
         return form_data
 
     def _member_profile(self, regform, registration=None, *, management=False):
@@ -461,6 +541,64 @@ class STSAPlugin(IndicoPlugin):
         except Exception:
             self.logger.exception('Could not check a registration e-mail against the membership')
             return None
+
+    # -- sign-in -------------------------------------------------------------
+
+    def _keep_profile_claims(self, app, **kwargs):
+        """Make every identity provider carry the member-detail claims through.
+
+        Indico gives each identity provider an ``identity_info_keys`` filter
+        and sets it to the user fields it synchronizes, so a claim called
+        ``chinese_name`` is dropped from the identity before anything can see
+        it -- which is why the fields stayed empty for everybody while the
+        provider was sending every claim there was.  Listing the names in
+        ``IDENTITY_PROVIDERS`` is the operator's way round it; this is the
+        same thing done here, so that installing the plugin is enough.
+
+        The hook is the provider's ``get_identity_from_auth`` rather than the
+        filter itself, because only there can it be gated on the admin switch
+        at the moment of the login -- a filter edited at start-up would go on
+        keeping the claims of a member of a site that had switched the feature
+        off.  Providers are shared by every request of the process, and
+        wrapping one is idempotent.
+        """
+        try:
+            with app.app_context():
+                providers = dict(multipass.identity_providers)
+        except Exception:
+            self.logger.exception('Could not read the identity providers, so profile claims will not be kept')
+            return
+        for name, provider in providers.items():
+            # Indico's own password login asks for no user info at all, and
+            # has no provider response to take any from.
+            if name == 'indico' or hasattr(provider.get_identity_from_auth, 'stsa_wraps'):
+                continue
+            provider.get_identity_from_auth = self._claim_keeping(provider.get_identity_from_auth)
+
+    def _claim_keeping(self, get_identity_from_auth):
+        """`get_identity_from_auth`, but with the member-detail claims kept.
+
+        Nothing that goes wrong adding them may cost anybody the login: it is
+        guarded like every other handler here, and what the original raises --
+        a response with no identifier in it -- is left to propagate as it
+        always did.
+        """
+        def keeping_claims(auth_info):
+            identity_info = get_identity_from_auth(auth_info)
+            try:
+                if identity_info is not None and self.settings.get('autofill_member_profile'):
+                    keep_profile_claims(auth_info.data, identity_info.data)
+                    if no_claims_sent(auth_info.data):
+                        # Names only: the values are somebody's personal details.
+                        self.logger.info('The login through %s carried none of %s, so there is nothing to fill '
+                                         'forms in from. It did carry: %s', identity_info.provider.name,
+                                         ', '.join(PROFILE_FIELDS.values()), ', '.join(sorted(auth_info.data)))
+            except Exception:
+                self.logger.exception('Could not keep the profile claims of a login')
+            return identity_info
+
+        keeping_claims.stsa_wraps = get_identity_from_auth
+        return keeping_claims
 
     # -- management UI -------------------------------------------------------
 

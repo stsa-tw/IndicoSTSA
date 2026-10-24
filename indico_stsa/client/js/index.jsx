@@ -29,6 +29,7 @@ import {registerPluginComponent, registerPluginObject} from 'indico/utils/plugin
 import GroupLoginGate from './GroupLoginGate';
 import MemberDiscountField from './MemberDiscountField';
 import MemberDiscountNotice from './MemberDiscountNotice';
+import makePrefilledTitle from './PrefilledTitle';
 import ProfileInput from './ProfileInput';
 import setupWalletBadges from './wallet';
 
@@ -60,6 +61,7 @@ registerPluginObject('stsa', 'regformCustomFields', {
 // The member's own details.  `title` is what the "Add field" dropdown calls the
 // type; `label` is what the new field is called until the organizer says
 // otherwise, which saves them typing the one thing the type already tells us.
+// See `PrefilledTitle` for why that is not `settingsFormInitialData`.
 const PROFILE_FIELDS = [
   {name: 'ext__stsa_chinese_name', title: 'STSA 中文姓名', label: '中文姓名', icon: 'user'},
   {
@@ -85,8 +87,8 @@ PROFILE_FIELDS.forEach(({name, title, label, icon}) => {
     inputComponent: ProfileInput,
     // Nothing to configure beyond the standard settings: the value is a plain
     // string and where it comes from is fixed by the type.
-    settingsFormInitialData: {title: label},
   });
+  registerPluginComponent('stsa', `regform-${name}-field-settings`, makePrefilledTitle(label));
 });
 
 document.addEventListener('DOMContentLoaded', setupWalletBadges);

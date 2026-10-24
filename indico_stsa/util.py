@@ -10,7 +10,8 @@ from indico.modules.events.registration.models.form_fields import RegistrationFo
 from indico.modules.events.registration.models.items import RegistrationFormSection
 
 from indico_stsa.constants import (GROUP_MODES_WITH_GROUP, GROUP_PLAN_FIELD, GROUP_PLUGIN, MEMBER_DISCOUNT_FIELD,
-                                  MEMBER_DISCOUNT_FIELD_TITLE, MEMBER_DISCOUNT_SECTION_TITLE, PROFILE_FIELDS)
+                                  MEMBER_DISCOUNT_FIELD_TITLE, MEMBER_DISCOUNT_SECTION_TITLE, NAME_SOURCES,
+                                  PROFILE_FIELDS)
 from indico_stsa.models import SCHEMA
 from indico_stsa.models.settings import STSASettings
 from indico_stsa.profile import profile_values
@@ -33,6 +34,11 @@ logger = Logger.get('plugin.stsa')
 #: operator who runs the migration on a live instance should not have to
 #: restart every worker before being believed.
 _tables_exist = False
+#: The column the newest migration added.  A table that has not got it is one
+#: that `indico db --plugin stsa upgrade` has not been run against since the
+#: plugin was updated, and every query on it names the column -- which is the
+#: same failure as no table at all, only later.
+NEWEST_COLUMN = 'last_name_disabled'
 #: So that a broken install says so once per process rather than once per page.
 _warned_about_tables = False
 
@@ -41,25 +47,29 @@ def tables_exist():
     """Whether the plugin's own tables have been created in this database.
 
     ``False`` means `indico db --plugin stsa upgrade` has not been run (or was
-    run against a different database).  Asked of the inspector rather than
-    learnt by letting a query fail: in PostgreSQL a failed statement aborts the
-    whole surrounding transaction, so catching the error after the fact would
-    take the rest of the request down with it -- including, on the registration
-    path, work that has nothing to do with this plugin.
+    run against a different database, or not since the plugin was updated).
+    Asked of the inspector rather than learnt by letting a query fail: in
+    PostgreSQL a failed statement aborts the whole surrounding transaction, so
+    catching the error after the fact would take the rest of the request down
+    with it -- including, on the registration path, work that has nothing to do
+    with this plugin.
     """
     global _tables_exist, _warned_about_tables
     if _tables_exist:
         return True
     try:
-        _tables_exist = sa_inspect(db.engine).has_table(STSASettings.__tablename__, schema=SCHEMA)
+        inspector = sa_inspect(db.engine)
+        _tables_exist = (inspector.has_table(STSASettings.__tablename__, schema=SCHEMA) and
+                         any(column['name'] == NEWEST_COLUMN
+                             for column in inspector.get_columns(STSASettings.__tablename__, schema=SCHEMA)))
     except Exception:
         # No database to ask, which every other query is about to discover too.
         logger.exception('Could not check whether the STSA tables exist')
         return False
     if not _tables_exist and not _warned_about_tables:
         _warned_about_tables = True
-        logger.warning('The STSA plugin has no tables in this database, so every per-form feature is off. '
-                       'Run `indico db --plugin stsa upgrade` and restart Indico.')
+        logger.warning('The STSA plugin has no up-to-date tables in this database, so every per-form feature is '
+                       'off. Run `indico db --plugin stsa upgrade` and restart Indico.')
     return _tables_exist
 
 
@@ -214,6 +224,60 @@ def find_profile_fields(regform):
     """
     return [item for item in regform.active_fields
             if item.input_type in PROFILE_FIELDS and not item.parent.is_manager_only]
+
+
+#: Which of the settings' columns says that a default name field is switched off.
+NAME_COLUMNS = {
+    'first_name': 'first_name_disabled',
+    'last_name': 'last_name_disabled',
+}
+
+
+def name_source(regform, name, *, ignoring=None):
+    """The field that can stand in for the default name field called `name`, or ``None``.
+
+    It has to be one the participant fills in -- `find_profile_fields` already
+    leaves out manager-only sections -- and one they are always shown: a field
+    that appears only if another is answered would leave the registration with
+    no name whenever it did not.
+
+    :param ignoring: the ID of a field to leave out of the search, for the
+                     moment before it is deleted.
+    """
+    wanted = NAME_SOURCES[name]
+    return next((field for field in find_profile_fields(regform)
+                 if field.input_type == wanted and field.show_if_id is None and field.id != ignoring), None)
+
+
+def default_name_state(regform, name):
+    """Whether the default name field `name` is switched off: ``None`` if it cannot be.
+
+    ``None`` is the form as core has it, where First and Last name are required
+    and there is no switch for them.  A field gets a switch -- ``False`` while it
+    is on, ``True`` once it is off -- when the form has the field that would
+    stand in for it, and not before: the point of the switch is that the name
+    comes from somewhere else.
+    """
+    if not tables_exist() or name_source(regform, name) is None:
+        return None
+    # No row is a form nobody has configured, and that one has the switch too.
+    settings = regform.stsa_settings
+    return settings is not None and bool(getattr(settings, NAME_COLUMNS[name]))
+
+
+def disabled_names(regform):
+    """``{default field's name: the field supplying it}`` for every one that is switched off.
+
+    Both halves are checked every time rather than trusting the stored switch:
+    an organizer who deletes the English name from a form that has First name
+    switched off has not asked for a form with no name on it, and the answer
+    here is what keeps it from being one.
+    """
+    settings = get_settings(regform)
+    if settings is None:
+        return {}
+    return {name: source for name, column in NAME_COLUMNS.items()
+            if getattr(settings, column) and (source := name_source(regform, name)) is not None}
 
 
 def login_identity(user):

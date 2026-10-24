@@ -61,6 +61,26 @@ function isSerializable(value) {
   return typeof value !== 'function';
 }
 
+/**
+ * Whether a value says nothing: empty text, nothing picked, an affiliation with
+ * no text in it.  `false` and `0` are answers.
+ */
+export function isBlank(value) {
+  if (value === null || value === undefined) {
+    return true;
+  }
+  if (typeof value === 'string') {
+    return value.trim() === '';
+  }
+  if (Array.isArray(value)) {
+    return value.every(isBlank);
+  }
+  if (typeof value === 'object') {
+    return Object.values(value).every(isBlank);
+  }
+  return false;
+}
+
 /** Put the current answers away. Returns whether anything was stored. */
 export function saveDraft(config, values) {
   const clean = serializableValues(values);

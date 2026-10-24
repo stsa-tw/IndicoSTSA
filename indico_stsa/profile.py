@@ -7,11 +7,17 @@ member's registrations say about them is what their membership says.  Nobody
 signed in, or a claim the account does not have, leaves the field an ordinary
 text box.
 
-Indico already keeps every claim.  Its authlib identity provider hands the whole
-userinfo response to the identity, and `process_identity` writes it into
-``Identity.data`` on every login -- so no second round trip to the provider is
-needed, and none is made.  What this module does is the part that needs neither
-Indico nor a database: which claims there are, what text a claim reads as, and
+Indico does **not** keep them by default, which is the one thing here that is
+easy to get wrong.  The identity provider receives every claim, but builds the
+identity's data through ``identity_info_keys`` -- a whitelist that Indico sets to
+the handful of fields it synchronizes into a user (name, e-mail, affiliation,
+phone, address) -- and anything else is dropped before `process_identity` ever
+sees it.  So `keep_profile_claims` copies the four claims across at login, from
+the provider's own data, after which they are in ``Identity.data`` like any
+other and need no second round trip to the provider.
+
+What this module does is the part that needs neither Indico nor a database:
+which claims there are, what text a claim reads as, which of them to keep, and
 what the form data has to say for a field to come out locked.  *Whose* claims
 those are, and whether they apply to this request at all, is
 `indico_stsa.util.member_profile`.
@@ -43,6 +49,46 @@ def lock_reason():
     form data and `json.dumps` refuses a lazy string.
     """
     return str(_('Filled in from your STSA membership. Sign out to enter something else.'))
+
+
+def keep_profile_claims(raw, data):
+    """Carry the member-detail claims from the provider's response onto the identity.
+
+    :param raw: what the provider sent -- ``AuthInfo.data``, a plain dict.
+    :param data: the identity's data, a ``MultiDict`` that the provider's
+                 ``identity_info_keys`` filter has already been through, and
+                 which is changed in place.
+    :return: the claims that were added.
+
+    A claim the filter already let through is left alone, so an operator who
+    lists the four names in ``identity_info_keys`` themselves gets exactly what
+    they asked for.  Nothing else is touched: ``school``, ``groups`` and the
+    rest of the response are not this plugin's to store.
+    """
+    kept = []
+    for claim in PROFILE_FIELDS.values():
+        value = raw.get(claim)
+        if value is None or data.get(claim) is not None:
+            continue
+        data.setlist(claim, list(value) if isinstance(value, (list, tuple)) else [value])
+        kept.append(claim)
+    return kept
+
+
+def no_claims_sent(raw):
+    """Whether a provider's response carries none of the member-detail claims.
+
+    That is the one case worth saying out loud in the log, because it is never
+    this plugin's doing and nothing on the page shows it: the provider did not
+    emit the claims (no scope mapping), Indico did not ask for the scope that
+    carries them, or they are in the userinfo response and Indico is reading the
+    ID token (see ``use_id_token`` in the README).  Seeing *which* names did
+    arrive tells those apart.
+
+    A claim that is present and blank still counts as sent: that is a member
+    with nothing to say, which is a different thing to report.
+    """
+    return not any(claim in raw for claim in PROFILE_FIELDS.values())
 
 
 def _raw_values(data, claim):

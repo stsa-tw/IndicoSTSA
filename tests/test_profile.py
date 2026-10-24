@@ -17,7 +17,8 @@ import json
 from werkzeug.datastructures import MultiDict
 
 from indico_stsa.constants import PROFILE_FIELDS
-from indico_stsa.profile import autofill_profile_fields, claim_text, lock_reason, profile_values
+from indico_stsa.profile import (autofill_profile_fields, claim_text, keep_profile_claims, lock_reason,
+                                no_claims_sent, profile_values)
 
 
 CHINESE_NAME = 'ext__stsa_chinese_name'
@@ -33,6 +34,84 @@ def identity_data(**claims):
         for single in value if isinstance(value, list) else [value]:
             data.add(claim, single)
     return data
+
+
+class TestKeepProfileClaims:
+    """The claims reach the identity at all -- the half that a form of plain values cannot show.
+
+    Indico builds an identity's data through a whitelist of the user fields it
+    synchronizes, so a claim called `chinese_name` is gone before anything can
+    read it.  Everything below this class assumed it had been kept, which is how
+    it went unnoticed.
+    """
+
+    RAW = {
+        'sub': 'abc', 'email': 'mei@example.com', 'groups': ['members'], 'school': 'NUS',
+        'chinese_name': '林美玲', 'english_name': 'Mei-Ling Lin', 'major': '資訊工程', 'year_of_study': '大三',
+    }
+
+    def filtered(self):
+        """What `IdentityInfo` leaves of the response: the whitelist, and nothing else."""
+        data = MultiDict()
+        data.add('email', 'mei@example.com')
+        for key in ('first_name', 'last_name', 'affiliation', 'phone', 'address'):
+            data.add(key, None)
+        return data
+
+    def test_carries_the_four_claims_across(self):
+        data = self.filtered()
+        assert sorted(keep_profile_claims(self.RAW, data)) == sorted(PROFILE_FIELDS.values())
+        assert profile_values(data) == {
+            CHINESE_NAME: '林美玲', ENGLISH_NAME: 'Mei-Ling Lin', MAJOR: '資訊工程', YEAR_OF_STUDY: '大三',
+        }
+
+    def test_takes_nothing_else(self):
+        data = self.filtered()
+        keep_profile_claims(self.RAW, data)
+        assert 'school' not in data
+        assert 'groups' not in data
+        assert 'sub' not in data
+
+    def test_what_the_filter_kept_is_left_as_it_was(self):
+        data = self.filtered()
+        data.add('major', 'already there')
+        assert 'major' not in keep_profile_claims(self.RAW, data)
+        assert data.getlist('major') == ['already there']
+
+    def test_a_claim_that_was_not_sent_is_not_invented(self):
+        data = self.filtered()
+        raw = {k: v for k, v in self.RAW.items() if k != 'major'}
+        assert 'major' not in keep_profile_claims(raw, data)
+        assert 'major' not in data
+
+    def test_a_claim_sent_as_null_is_not_kept(self):
+        data = self.filtered()
+        assert keep_profile_claims({'major': None}, data) == []
+        assert 'major' not in data
+
+    def test_a_list_stays_a_list(self):
+        data = self.filtered()
+        keep_profile_claims({'major': ['資訊工程', '數學']}, data)
+        assert data.getlist('major') == ['資訊工程', '數學']
+        assert claim_text(data, 'major') == '資訊工程 / 數學'
+
+    def test_a_response_with_none_of_them(self):
+        # Somebody signing in through a provider that has never heard of these
+        # scopes is not a failure; they get plain text boxes.
+        data = self.filtered()
+        assert keep_profile_claims({'sub': 'abc', 'email': 'mei@example.com'}, data) == []
+
+    def test_a_response_with_none_of_them_is_noticed(self):
+        assert no_claims_sent({'sub': 'abc', 'email': 'mei@example.com', 'groups': ['members']})
+        assert not no_claims_sent(self.RAW)
+
+    def test_one_claim_is_enough_not_to_be_noticed(self):
+        assert not no_claims_sent({'sub': 'abc', 'major': '資訊工程'})
+
+    def test_a_blank_claim_still_counts_as_sent(self):
+        # A member with no major is a member the provider did describe; the
+        # report is for a provider that said nothing at all.
+        assert not no_claims_sent({'sub': 'abc', 'major': '', 'year_of_study': None})
 
 
 class TestTheFields:
