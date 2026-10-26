@@ -98,6 +98,7 @@ class RHSTSASettings(RHSTSARegFormBase):
             applies_to=settings.applies_to if settings else APPLIES_TO_BASE,
             notice_text=settings.notice_text if settings else '',
             group_login_required=settings.group_login_required if settings else False,
+            include_in_events_api=settings.include_in_events_api if settings else False,
         )
         form = RegFormSettingsForm(obj=defaults, group_plugin_installed=group_plugin)
 
@@ -111,6 +112,7 @@ class RHSTSASettings(RHSTSARegFormBase):
             settings.discount_value = form.discount_value.data or Decimal(0)
             settings.applies_to = form.applies_to.data
             settings.notice_text = form.notice_text.data or ''
+            settings.include_in_events_api = form.include_in_events_api.data
             if group_plugin:
                 settings.group_login_required = form.group_login_required.data
 

@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds nine
+An Indico plugin (`indico-plugin-stsa`, entry point `indico.plugins` → `stsa`) that adds ten
 independent, default-off customizations for the Singapore Taiwanese Student Association: e-mail
 subject prefixes, a per-registration-form member discount, a members-only gate on group
 registration, the Apple/Google wallet badges, an STSA ticket design with Chinese-capable fonts, an
 Apple Wallet pass drawn in Xcode's Pass Designer, a one-click payment reminder for everybody who
 still owes money, holding a signed-in member's registration e-mail to the address on their
-membership, and four registration field types (中文姓名, 英文姓名, 就讀科系, 目前身分) that a
-signed-in member's account fills in and locks.
+membership, four registration field types (中文姓名, 英文姓名, 就讀科系, 目前身分) that a
+signed-in member's account fills in and locks, and a JSON endpoint that lists the events a
+participant has registered for.
 
 `README.md` documents *why* almost every design decision was made — read the relevant section before
 changing behaviour, because most of the odd-looking code is deliberate and the rejected alternatives
@@ -73,6 +74,7 @@ all the unit tests**, while their DB-touching counterparts are exercised only ag
 | [email_lock.py](indico_stsa/email_lock.py) — *which* field, and *whether* an address is the member's | `util.email_lock_member` — *whom* the lock applies to |
 | [profile.py](indico_stsa/profile.py) — *what* a claim reads as, and the padlock's data | `util.member_profile` — *whose* claims, `handlers.apply_member_profile` — writing them |
 | [names.py](indico_stsa/names.py) — what a name is, the form without First/Last name, injecting them | `util.disabled_names` — *whether* they are off, [default_names.py](indico_stsa/default_names.py) — the wrappers of core, `handlers.sync_default_names` — writing them |
+| [attendance.py](indico_stsa/attendance.py) — what a registration's *status* is, what the query string meant | [registered_events.py](indico_stsa/registered_events.py) — *finding* them and the payload, [controllers/api.py](indico_stsa/controllers/api.py) — the endpoint |
 
 [constants.py](indico_stsa/constants.py) holds every shared name so modules that must not import
 each other still agree; [util.py](indico_stsa/util.py) holds lookups, field provisioning and the
@@ -202,6 +204,30 @@ If you touch this, know what it was tested against: the editor toggle, a member'
 real OIDC login, management *Add registrant* (blank English name refused on `field_13`), a management
 modification that sent only the Chinese name, the switch released by disabling the English name, and a
 *show if* on Last Name removed again on save. None of it has unit coverage beyond `names.py`.
+
+### The registered-events API
+
+`GET /api/stsa/registered-events` ([controllers/api.py](indico_stsa/controllers/api.py)): the signed-in
+caller's own registrations, filtered by `from`/`to` (the event overlaps the window; a bare date is the
+whole day, so `to` includes it) and `status` (`attendance.STATUSES`: upcoming, ongoing, checked_in,
+no_show, pending, withdrawn, rejected). It is a `json_errors` RH under `@oauth_scope('read:user')` —
+**not** the default scope, which core demands `read:everything` for and reserves for non-API pages — and
+there is no way to name another user, so nothing here is for an organizer's token to be used on.
+
+Which forms are in it is `STSASettings.include_in_events_api`, per **registration form**, default off,
+and the query *joins* the settings row, so a form nobody configured (or an install whose tables were
+never upgraded) lists nothing rather than everything. Status and window are applied in **Python**, to
+the one participant's rows, through `attendance.py` — deliberately not repeated in SQL, so what a
+registration is listed as and what it is filtered by cannot disagree. `unpaid` is not a status (it holds
+a place, so it is `upcoming`/`no_show`; the payload carries `registration.state`), `pending` is (the place
+is not theirs yet), and `withdrawn`/`rejected` are listed only when asked for.
+
+The blueprint has **no `url_prefix`** for this reason: the endpoint is not about one event, and a plugin
+gets one blueprint (two would both register as `plugin_stsa`). Every management rule spells out
+`/event/<int:event_id>` itself; the URLs are unchanged.
+
+Tested live against the harness: the status/window matrix, the three auth outcomes (no credentials 403,
+bad token 401, token without the scope 403), the settings form, and a database without the newest column.
 
 ### Client side
 

@@ -99,6 +99,12 @@ class RegFormSettingsForm(IndicoForm):
         description=_('Only signed-in STSA members may create or join a group. Needs the group registration '
                       'plugin; without it there is no group registration to restrict.'))
 
+    include_in_events_api = BooleanField(
+        _('List in the events API'), widget=SwitchWidget(),
+        description=_('Lets a signed-in participant ask the STSA events API (/api/stsa/registered-events) which '
+                      'events they have registered for, and whether they came. Registrations made with this form '
+                      'are listed there only while this is on.'))
+
     def __init__(self, *args, group_plugin_installed=True, **kwargs):
         super().__init__(*args, **kwargs)
         if not group_plugin_installed:

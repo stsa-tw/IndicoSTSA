@@ -70,7 +70,9 @@ class STSAPlugin(IndicoPlugin):
     Google wallet badges, which is what participants actually look for, gives
     tickets and badges a Chinese-capable font and an STSA ticket design, and
     puts a one-click payment reminder for everybody who still owes money in the
-    registrant list.
+    registrant list.  An endpoint, /api/stsa/registered-events, tells a signed-in
+    participant which events they have registered for and whether they came;
+    each registration form says whether its registrations are listed there.
     """
 
     configurable = True

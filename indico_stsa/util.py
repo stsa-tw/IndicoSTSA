@@ -38,7 +38,7 @@ _tables_exist = False
 #: that `indico db --plugin stsa upgrade` has not been run against since the
 #: plugin was updated, and every query on it names the column -- which is the
 #: same failure as no table at all, only later.
-NEWEST_COLUMN = 'last_name_disabled'
+NEWEST_COLUMN = 'include_in_events_api'
 #: So that a broken install says so once per process rather than once per page.
 _warned_about_tables = False
 

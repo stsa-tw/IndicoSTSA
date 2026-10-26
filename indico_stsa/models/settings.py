@@ -81,6 +81,16 @@ class STSASettings(db.Model):
         default=False
     )
 
+    #: Whether the registrations made with this form are listed by the events
+    #: API (`indico_stsa.registered_events`) when their owner asks for the
+    #: events they have registered for.  Off means never listed, which is also
+    #: what a form with no row at all is.
+    include_in_events_api = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
     registration_form = db.relationship(
         'RegistrationForm',
         lazy=True,

@@ -23,6 +23,7 @@
                     {% if group_plugin %}
                         <th>{% trans %}Groups: members only{% endtrans %}</th>
                     {% endif %}
+                    <th>{% trans %}Events API{% endtrans %}</th>
                     <th></th>
                 </tr>
             </thead>
@@ -48,6 +49,14 @@
                                 {% endif %}
                             </td>
                         {% endif %}
+                        <td>
+                            {% if row.settings and row.settings.include_in_events_api %}
+                                <span class="icon-checkmark text-color success"></span>
+                                {% trans %}Listed{% endtrans %}
+                            {% else %}
+                                <span class="text-not-important">{% trans %}Not listed{% endtrans %}</span>
+                            {% endif %}
+                        </td>
                         <td class="text-right">
                             <a class="i-button text-color borderless icon-settings"
                                href="{{ url_for_plugin('stsa.manage_settings', row.regform) }}">

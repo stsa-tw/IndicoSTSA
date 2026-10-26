@@ -2,7 +2,7 @@
 
 Customizations for the Singapore Taiwanese Student Association.
 
-Nine things, each independently switchable:
+Ten things, each independently switchable:
 
 1. **E-mail subject prefixes.** Every mail Indico sends goes out with STSA's own
    prefix instead of `[Indico]`.
@@ -33,6 +33,10 @@ Nine things, each independently switchable:
    the default *First name* and *Last name* fields get the *Disable* button
    Indico withholds from them, and a registrant's name becomes the English name
    followed by the Chinese one.
+10. **The registered-events API.** A signed-in participant — or an app acting for
+    them — can ask which events they have registered for, filtered by when they
+    take place and by whether the participant came, is still to come, or missed
+    it.
 
 A **member** is anyone signed in. An STSA membership *is* an account on the
 site: there is no membership table and no separate sign-up, so "becoming a
@@ -911,6 +915,100 @@ until it is reloaded; pressing *Enable* on it is answered as the success it is.
 
 The switch needs the plugin's newest column. Like everything else here it reads
 as *off* without it — see [Installing](#installing).
+
+## 10. The registered-events API
+
+```
+GET /api/stsa/registered-events?from=2026-11-01&to=2026-11-30&status=upcoming,checked_in
+```
+
+Answers with the signed-in participant's own registrations, one entry each, with
+the event and the registration inside it:
+
+```json
+{"registrations": [{
+  "status": "upcoming",
+  "event": {"id": 21, "title": "迎新茶會", "url": "https://…/event/21/",
+            "start_dt": "2026-11-14T14:00:00+08:00", "end_dt": "2026-11-14T17:00:00+08:00",
+            "timezone": "Asia/Singapore", "venue": "NUS", "room": null, "address": null},
+  "registration": {"id": 20, "friendly_id": 7, "state": "complete",
+                   "registered_dt": "2026-10-26T08:16:02+00:00",
+                   "checked_in": false, "checked_in_dt": null,
+                   "form": {"id": 21, "title": "報名表"}}
+}]}
+```
+
+Soonest event first. Somebody who registered with two forms of one event is
+listed twice, because the status belongs to the registration.
+
+### Which registrations are in it
+
+Only the ones made with a registration form whose **List in the events API**
+switch is on — in the form's *STSA* settings page, and shown in the overview
+next to the member discount. It is off for every form until an organizer turns
+it on, so installing the plugin publishes nothing, and a form without an STSA
+settings row (or a database that has not been upgraded) lists nothing rather
+than everything. It is per form rather than per event so that an event with a
+volunteers' form beside the participants' one can list one and not the other;
+an event with a single form behaves exactly as "per event" would.
+
+Registrations that were deleted, on events that were deleted, or made with
+forms that were deleted are never listed.
+
+### Who may ask
+
+Always for themselves: there is no way to name another user, so there is
+nothing here for an organizer's token to be used for. It answers to the
+signed-in session, or to an OAuth or personal access token carrying the
+**`read:user`** scope (`read:everything` and `full:everything` work as they do
+everywhere). `read:user` is core's scope for information about the signed-in
+user and the narrowest one that is a fair description of this; without a scope
+of its own, core would have required `read:everything`, which it reserves for
+things that are not meant as an API. Errors are JSON: `403` with no
+credentials, `401` for a token that is not valid, `403` for one without the
+scope, `400` — saying which parameter — for a value it cannot read.
+
+### The query string
+
+* **`from`, `to`** — keep the events that take place, even in part, in the
+  window. ISO 8601 dates or date-times. A date alone is the whole day, so
+  `to=2026-11-30` includes the 30th. Anything without a UTC offset is read in
+  Indico's own timezone (`DEFAULT_TIMEZONE`). A `+` in an offset has to be
+  written `%2B` in a URL; the error says so when it is not. The window is
+  half-open, so a party that ends at midnight belongs to the day before.
+  A three-day conference is in every week it touches, not only the one it
+  starts in.
+* **`status`** — one or more of the below, comma-separated or repeated. Absent
+  means everything except `withdrawn` and `rejected`. A name that is not a
+  status is a `400`, not an empty list: a typo that returns nothing looks
+  exactly like a participant with no events.
+
+| status | means |
+| --- | --- |
+| `upcoming` | the event has not started, and the registration holds a place |
+| `ongoing` | the event is on and the participant has not checked in yet |
+| `checked_in` | they checked in — whether the event is over or not |
+| `no_show` | the event is over and they never did |
+| `pending` | an organizer has not approved the registration yet, so the place is not theirs |
+| `withdrawn`, `rejected` | the registration was cancelled, by them or by an organizer |
+
+`no_show` needs the event to be *over*: while it is on, somebody who has not
+arrived is merely `ongoing`. A registration that is *awaiting payment* is not a
+status of its own — it holds a place and can be checked in, so it is `upcoming`
+or `no_show` like any other; `registration.state` says `unpaid` for a client
+that wants to flag it.
+
+### Why the status is not a SQL filter
+
+The query finds one participant's registrations on the forms that are listed,
+and the status and the window are applied to those in Python, through the
+tested `indico_stsa.attendance`. There is a handful of rows per participant, and
+doing it once means the status a registration is listed under and the status it
+is filtered by cannot disagree.
+
+The switch needs the plugin's newest column. Like everything else here it reads
+as *off* without it — see [Installing](#installing) — and the endpoint answers
+with an empty list.
 
 ## Working with the group registration plugin
 

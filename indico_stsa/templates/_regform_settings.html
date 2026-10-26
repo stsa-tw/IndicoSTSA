@@ -15,6 +15,9 @@
             {% if group_plugin and settings and settings.group_login_required %}
                 {% trans %}Group registration is restricted to signed-in STSA members.{% endtrans %}
             {% endif %}
+            {% if settings and settings.include_in_events_api %}
+                {% trans %}Registrations on this form are listed in the STSA events API.{% endtrans %}
+            {% endif %}
         </p>
         <div class="toolbar f-j-end">
             <a class="i-button icon-settings" href="{{ url_for_plugin('stsa.manage_settings', regform) }}">
