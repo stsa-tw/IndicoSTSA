@@ -6,3 +6,7 @@
 # Artwork and compiled assets are binary and must never be touched.
 *.png binary
 *.svg -text
+
+# Scalar's browser bundle is one minified line, vendored byte for byte, and
+# `tests/test_vendor.py` holds it to the hash in `scalar.json`.
+indico_stsa/vendor/scalar/standalone.js -text -diff linguist-vendored

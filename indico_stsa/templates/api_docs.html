@@ -1,0 +1,21 @@
+{#- The whole page: Scalar draws everything else.  It is not an Indico page
+    on purpose -- Scalar wants the full window, and none of Indico's own
+    scripts or styles have any business in it.  Everything it is given is
+    served by this plugin and only to an administrator; see
+    `indico_stsa.controllers.docs` for the headers that keep it that way. -#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>{{ title }}</title>
+</head>
+<body>
+    {#- Scalar finds this element by its id and reads the document's URL and its
+        own configuration off it, which is what spares the page any inline script
+        of its own. -#}
+    <script id="api-reference" data-url="{{ spec_url }}" data-configuration="{{ configuration }}"></script>
+    <script src="{{ script_url }}"></script>
+</body>
+</html>

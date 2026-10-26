@@ -1,6 +1,6 @@
 from indico.core.plugins import IndicoPluginBlueprint
 
-from indico_stsa.controllers import api, management
+from indico_stsa.controllers import api, docs, management
 
 
 # No `url_prefix` on the blueprint: the participant-facing API is not about any
@@ -22,3 +22,9 @@ blueprint.add_url_rule(f'{EVENT}/manage/registration/<int:reg_form_id>/stsa/paym
                        'payment_reminders_preview', management.RHSTSAPaymentReminderPreview, methods=('POST',))
 
 blueprint.add_url_rule('/api/stsa/registered-events', 'registered_events', api.RHSTSARegisteredEvents)
+
+# Administrators only, all of them.  The URLs are under /admin/ for that reason as
+# much as any other: nothing here is for anybody who is not signed in as one.
+blueprint.add_url_rule('/admin/stsa/api-docs/', 'api_docs', docs.RHSTSAAPIDocs)
+blueprint.add_url_rule('/admin/stsa/api-docs/openapi.json', 'api_docs_spec', docs.RHSTSAOpenAPI)
+blueprint.add_url_rule('/admin/stsa/api-docs/scalar.js', 'api_docs_scalar', docs.RHSTSAScalarScript)

@@ -11,8 +11,9 @@ registration, the Apple/Google wallet badges, an STSA ticket design with Chinese
 Apple Wallet pass drawn in Xcode's Pass Designer, a one-click payment reminder for everybody who
 still owes money, holding a signed-in member's registration e-mail to the address on their
 membership, four registration field types (中文姓名, 英文姓名, 就讀科系, 目前身分) that a
-signed-in member's account fills in and locks, and a JSON endpoint that lists the events a
-participant has registered for.
+signed-in member's account fills in and locks, a JSON endpoint that lists the events a
+participant has registered for, and (not a switchable feature, just for administrators) an OpenAPI
+document of every endpoint the instance has, drawn with a vendored Scalar.
 
 `README.md` documents *why* almost every design decision was made — read the relevant section before
 changing behaviour, because most of the odd-looking code is deliberate and the rejected alternatives
@@ -44,6 +45,7 @@ python scripts/build-ticket-artwork.py                       # regenerate static
 python scripts/install-apple-badges.py ~/Downloads/Add-to-Apple-Wallet.zip
 python scripts/sign-preview-pass.py --certificate … --key …   # build a real signed .pkpass
 python scripts/sign-preview-pass.py --certificate c.pem --key k.pem   # sign a real one to open in Wallet
+python scripts/update-scalar.py 1.76.0                        # re-vendor Scalar (verifies npm's SHA-512)
 python .github/scripts/check_wheel.py dist                   # release gate on wheel contents
 ```
 
@@ -75,6 +77,7 @@ all the unit tests**, while their DB-touching counterparts are exercised only ag
 | [profile.py](indico_stsa/profile.py) — *what* a claim reads as, and the padlock's data | `util.member_profile` — *whose* claims, `handlers.apply_member_profile` — writing them |
 | [names.py](indico_stsa/names.py) — what a name is, the form without First/Last name, injecting them | `util.disabled_names` — *whether* they are off, [default_names.py](indico_stsa/default_names.py) — the wrappers of core, `handlers.sync_default_names` — writing them |
 | [attendance.py](indico_stsa/attendance.py) — what a registration's *status* is, what the query string meant | [registered_events.py](indico_stsa/registered_events.py) — *finding* them and the payload, [controllers/api.py](indico_stsa/controllers/api.py) — the endpoint |
+| [openapi.py](indico_stsa/openapi.py) — the document from plain `Operation`s, [marshmallow_schema.py](indico_stsa/marshmallow_schema.py) — a schema as JSON Schema | [api_docs.py](indico_stsa/api_docs.py) — *finding* the operations in the URL map, [controllers/docs.py](indico_stsa/controllers/docs.py) — the admin-only handlers |
 
 [constants.py](indico_stsa/constants.py) holds every shared name so modules that must not import
 each other still agree; [util.py](indico_stsa/util.py) holds lookups, field provisioning and the
@@ -228,6 +231,36 @@ gets one blueprint (two would both register as `plugin_stsa`). Every management 
 
 Tested live against the harness: the status/window matrix, the three auth outcomes (no credentials 403,
 bad token 401, token without the scope 403), the settings form, and a database without the newest column.
+
+### The API reference
+
+Administration → Integration → *API reference* (`/admin/stsa/api-docs/`): Scalar drawing an OpenAPI 3.1
+document generated from the running instance's URL map. **Every handler in
+[controllers/docs.py](indico_stsa/controllers/docs.py) is `RHAdminBase`** — the page, `openapi.json`, and
+`scalar.js` — and `tests/test_api_docs_guard.py` fails on any new `RH` in that module that is not. Scalar's
+script is served by a handler rather than from `static/` on purpose: `/static/plugins/stsa/` serves
+everything under `static/` to anybody, so the bundle lives in `indico_stsa/vendor/scalar/` and
+`check_wheel.py` refuses a wheel that has a `standalone.js` under `static/`.
+
+Finding the endpoints is a heuristic in `api_docs.is_api` (an `/api/` URL, or a handler with its own
+`@oauth_scope`; the `api` blueprint's key-management *pages* are excluded by name). The handler class is
+recovered from `IndicoBlueprint.add_url_rule`'s `make_view_func` closure (variable `obj`), and a handler's
+argument schemas from the **closures of webargs' wrappers** (`argmap`, `location`, then the factory's
+`schema_cls`/`schema_kwargs`). All of that is looked up *by name* and every failure degrades to "nothing
+known about that argument", never to a failed document — so a new Indico that builds its wrappers
+differently loses detail silently; the live check below is what notices. A handler that reads
+`request.args` by hand declares what it takes with `_OPENAPI_PARAMETERS` / `_OPENAPI_RESPONSE`
+(`RHSTSARegisteredEvents` does). Responses are otherwise "a successful response": Indico writes nothing
+down.
+
+`openapi.py` and `marshmallow_schema.py` are pure and unit-tested; the document of a real instance was
+validated with `openapi-spec-validator` (not a dependency — `pip install` it in the harness) and drawn in
+Scalar under the strict CSP the page sets (no `unsafe-eval`, `connect-src 'self'`) with an administrator, a
+member, a token without the scope, and nobody. Scalar is configured with telemetry, its agent and its web
+fonts off; the CSP would stop them anyway. It is **vendored byte for byte** —
+`scripts/update-scalar.py <version>` takes `dist/browser/standalone.js` out of the npm tarball after
+checking the registry's SHA-512 and records the file's SHA-256 in `scalar.json`; `tests/test_vendor.py`
+holds the file to it, and `.gitattributes` marks it `-text` so a line-ending conversion cannot change it.
 
 ### Client side
 

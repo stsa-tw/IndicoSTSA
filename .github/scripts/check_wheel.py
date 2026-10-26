@@ -12,6 +12,10 @@ is licensed to whoever downloaded it, under a non-transferable licence covering
 only their own passes, so it must never leave a maintainer's machine inside a
 package.  It is gitignored and excluded in `pyproject.toml`; this is the gate
 that stops a release if both of those are ever undone.
+
+It also refuses a wheel that carries Scalar's script in the public static folder.
+The API reference is for administrators and serves that script through a handler
+that checks; `/static/plugins/stsa/` serves everything under `static/` to anybody.
 """
 
 import json
@@ -56,6 +60,12 @@ REQUIRED_FILES = [
     # Without this a ticket whose title has an emoji prints a crossed box.
     f'{PKG}/static/fonts/NotoEmoji.ttf',
     f'{PKG}/static/fonts/OFL.txt',
+    # The API reference: its page, and the Scalar bundle it draws with, which is
+    # vendored (see `scripts/update-scalar.py`) so that nothing is fetched from a CDN.
+    f'{PKG}/templates/api_docs.html',
+    f'{PKG}/vendor/scalar/standalone.js',
+    f'{PKG}/vendor/scalar/scalar.json',
+    f'{PKG}/vendor/scalar/LICENSE',
 ]
 
 # Filenames here carry a date or a content hash, so match on directory and
@@ -69,10 +79,14 @@ REQUIRED_PATTERNS = [
 # The exact keys `plugin.py` passes to `inject_bundle`.
 REQUIRED_BUNDLES = ['main.js', 'main.css']
 
-# Nothing matching these may be in the wheel.  See the module docstring.
+# Nothing matching these may be in the wheel, each with the reason.  See the
+# module docstring.
+APPLE = "Apple's badge artwork is not redistributable and must not be packaged"
+PUBLIC = 'the API reference must be served by its handler, not from the public static folder'
 FORBIDDEN_PATTERNS = [
-    (f'{PKG}/static/wallet/apple/', '.svg'),
-    (f'{PKG}/static/wallet/apple/', '.png'),
+    (f'{PKG}/static/wallet/apple/', '.svg', APPLE),
+    (f'{PKG}/static/wallet/apple/', '.png', APPLE),
+    (f'{PKG}/static/', 'standalone.js', PUBLIC),
 ]
 
 
@@ -88,11 +102,10 @@ def main(dist_dir):
             if not any(n.startswith(prefix) and n.endswith(suffix) for n in names):
                 problems.append(f'missing {prefix}*{suffix}')
 
-        for prefix, suffix in FORBIDDEN_PATTERNS:
+        for prefix, suffix, reason in FORBIDDEN_PATTERNS:
             found = sorted(n for n in names if n.startswith(prefix) and n.endswith(suffix))
             if found:
-                problems.append("Apple's badge artwork is not redistributable and must not be packaged: "
-                                + ', '.join(found))
+                problems.append(f'{reason}: ' + ', '.join(found))
 
         if f'{PKG}/static/dist/manifest.json' in names:
             manifest = json.loads(zf.read(f'{PKG}/static/dist/manifest.json'))

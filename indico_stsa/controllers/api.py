@@ -7,8 +7,8 @@ from werkzeug.exceptions import BadRequest
 from indico.core.config import config
 from indico.web.rh import RHProtected, json_errors, oauth_scope
 
-from indico_stsa.attendance import parse_statuses, parse_window
-from indico_stsa.registered_events import describe, find_registered
+from indico_stsa.attendance import DEFAULT_STATUSES, STATUSES, parse_statuses, parse_window
+from indico_stsa.registered_events import RESPONSE_SCHEMA, describe, find_registered
 
 
 @json_errors
@@ -33,6 +33,24 @@ class RHSTSARegisteredEvents(RHProtected):
 
     A malformed value is a 400 saying which one, and never an empty list.
     """
+
+    # What the handler reads by hand, for the API reference (`indico_stsa.api_docs`).
+    _OPENAPI_PARAMETERS = (
+        {'name': 'from', 'in': 'query', 'required': False,
+         'description': 'Keep events that take place, even in part, on or after this. An ISO 8601 date or '
+                        'date-time; a date alone is the start of that day.',
+         'schema': {'type': 'string', 'example': '2026-11-01'}},
+        {'name': 'to', 'in': 'query', 'required': False,
+         'description': 'Keep events that start before this. An ISO 8601 date or date-time; a date alone is '
+                        'the end of that day, so `2026-11-30` includes the 30th. Without a UTC offset, either '
+                        "is read in Indico's own timezone.",
+         'schema': {'type': 'string', 'example': '2026-11-30'}},
+        {'name': 'status', 'in': 'query', 'required': False, 'style': 'form', 'explode': False,
+         'description': 'Which to list, comma-separated. Without it: ' + ', '.join(
+             status for status in STATUSES if status in DEFAULT_STATUSES) + '.',
+         'schema': {'type': 'array', 'items': {'type': 'string', 'enum': list(STATUSES)}}},
+    )
+    _OPENAPI_RESPONSE = RESPONSE_SCHEMA
 
     def _process(self):
         try:

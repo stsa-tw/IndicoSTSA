@@ -11,7 +11,7 @@ from indico.modules.events.registration.models.forms import RegistrationForm
 from indico.modules.events.registration.models.registrations import Registration
 from indico.util.date_time import now_utc
 
-from indico_stsa.attendance import overlaps, registration_status
+from indico_stsa.attendance import STATUSES, overlaps, registration_status
 from indico_stsa.models.settings import STSASettings
 from indico_stsa.util import tables_exist
 
@@ -92,3 +92,48 @@ def describe(registration, status):
             'form': {'id': regform.id, 'title': regform.title},
         },
     }
+
+
+def _nullable(kind, **extra):
+    return {'type': [kind, 'null'], **extra}
+
+
+#: What `describe` returns, as JSON Schema, for the API reference.  Kept beside
+#: the function it describes so that changing one is changing the other.
+ENTRY_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'status': {'type': 'string', 'enum': list(STATUSES)},
+        'event': {
+            'type': 'object',
+            'properties': {
+                'id': {'type': 'integer'},
+                'title': {'type': 'string'},
+                'url': {'type': 'string', 'format': 'uri'},
+                'start_dt': {'type': 'string', 'format': 'date-time',
+                             'description': "In the event's own timezone."},
+                'end_dt': {'type': 'string', 'format': 'date-time'},
+                'timezone': {'type': 'string', 'example': 'Asia/Singapore'},
+                'venue': _nullable('string'),
+                'room': _nullable('string'),
+                'address': _nullable('string'),
+            },
+        },
+        'registration': {
+            'type': 'object',
+            'properties': {
+                'id': {'type': 'integer'},
+                'friendly_id': {'type': 'integer'},
+                'state': {'type': 'string', 'enum': ['complete', 'pending', 'unpaid', 'rejected', 'withdrawn']},
+                'registered_dt': {'type': 'string', 'format': 'date-time'},
+                'checked_in': {'type': 'boolean'},
+                'checked_in_dt': _nullable('string', format='date-time'),
+                'form': {'type': 'object', 'properties': {'id': {'type': 'integer'}, 'title': {'type': 'string'}}},
+            },
+        },
+    },
+}
+RESPONSE_SCHEMA = {
+    'type': 'object',
+    'properties': {'registrations': {'type': 'array', 'items': ENTRY_SCHEMA}},
+}

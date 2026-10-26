@@ -73,6 +73,9 @@ class STSAPlugin(IndicoPlugin):
     registrant list.  An endpoint, /api/stsa/registered-events, tells a signed-in
     participant which events they have registered for and whether they came;
     each registration form says whether its registrations are listed there.
+    Administrators also get an API reference for every endpoint the instance
+    has, generated from it and drawn with Scalar, in the Integration section of
+    the administration menu.
     """
 
     configurable = True
@@ -150,6 +153,7 @@ class STSAPlugin(IndicoPlugin):
 
         # -- management UI ---------------------------------------------------
         self.connect(signals.menu.items, self._sidemenu_items, sender='event-management-sidemenu')
+        self.connect(signals.menu.items, self._admin_sidemenu_items, sender='admin-sidemenu')
         self.template_hook('extra-regform-settings', self._inject_regform_settings)
 
         # The "Customize list" dialog builds its column list from the form
@@ -609,6 +613,21 @@ class STSAPlugin(IndicoPlugin):
             return
         return SideMenuItem('stsa', _('STSA'), url_for_plugin('stsa.manage_overview', event),
                             section='organization', weight=-9)
+
+    def _admin_sidemenu_items(self, sender, **kwargs):
+        """The link to the API reference, in the administration area's menu.
+
+        The area is administrators' alone already, but the check is repeated: the
+        handlers behind the link are guarded either way, and this is what keeps
+        the link honest if that menu is ever shown to somebody else.
+        """
+        try:
+            if session.user and session.user.is_admin:
+                return SideMenuItem('stsa_api_docs', _('API reference'), url_for_plugin('stsa.api_docs'),
+                                    section='integration')
+        except Exception:
+            self.logger.exception('Could not build the API reference menu item')
+        return None
 
     def _before_render_template(self, sender, template=None, context=None, **kwargs):
         """Filter the registrant-list column dialog just before it renders.

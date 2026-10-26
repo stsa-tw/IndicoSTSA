@@ -2,7 +2,8 @@
 
 Customizations for the Singapore Taiwanese Student Association.
 
-Ten things, each independently switchable:
+Eleven things, each independently switchable -- except the last, which is just
+there for administrators:
 
 1. **E-mail subject prefixes.** Every mail Indico sends goes out with STSA's own
    prefix instead of `[Indico]`.
@@ -37,6 +38,9 @@ Ten things, each independently switchable:
     them — can ask which events they have registered for, filtered by when they
     take place and by whether the participant came, is still to come, or missed
     it.
+11. **An API reference for administrators.** Every endpoint this Indico has,
+    plugins included, written down as an OpenAPI document and drawn with
+    [Scalar](https://scalar.com) — in the administration area, and nowhere else.
 
 A **member** is anyone signed in. An STSA membership *is* an account on the
 site: there is no membership table and no separate sign-up, so "becoming a
@@ -1009,6 +1013,84 @@ is filtered by cannot disagree.
 The switch needs the plugin's newest column. Like everything else here it reads
 as *off* without it — see [Installing](#installing) — and the endpoint answers
 with an empty list.
+
+## 11. The API reference
+
+Indico has no OpenAPI document, no Swagger page, and no list of its own endpoints
+that is written anywhere except in its source. So the plugin generates one, from
+the instance it is running in: **Administration → Integration → API reference**
+(`/admin/stsa/api-docs/`) is [Scalar](https://scalar.com) drawing an OpenAPI 3.1
+document of every API endpoint this installation has, the plugins' included, at
+the version it is running. The raw document is at `.../openapi.json` and Scalar
+has a *Download* link for it.
+
+### Administrators only
+
+The page, the document and Scalar's own script are three handlers and all three
+are Indico's `RHAdminBase`: somebody who is not signed in is sent to the login
+page (or told `403` in JSON, for the document), and somebody who is signed in but
+is not an administrator is told `403`. A personal access token works for scripts,
+with the `read:everything` scope and an administrator behind it.
+
+The script is served by a handler and not from the plugin's `static/` folder,
+which Indico serves to anybody, so that "all of it behind the administrator
+login" is true of the JavaScript as well. A wheel that has it under `static/` is
+refused by the release gate.
+
+### How the endpoints are found
+
+Indico keeps no registry of its API, so an endpoint is one that *looks* like one:
+a handler mounted under an `/api/` URL, or one that asks for an OAuth scope of its
+own. That is a heuristic. It finds about three hundred operations on a stock
+instance, of which fewer than twenty have a scope of their own; the rest are what
+Indico's own pages call rather than anything meant for you. The document groups
+them apart: **Integration APIs** (endpoints with their own scope), **Plugins**,
+and **Everything else**.
+The pages that manage the classic API's keys live under `/api/` too and are left
+out by name.
+
+What is written down about each one is what can be read from it:
+
+* the URL, methods and path parameters, from the URL map;
+* who may call it: its own scope if it has one, and otherwise the two wildcard
+  scopes core accepts (`read:everything`; `full:everything` for anything but a
+  `GET`), or the signed-in session. Whether it *also* answers without
+  credentials is decided inside the handler, and is not claimed either way;
+* what it accepts, from the marshmallow schemas the handler parses its arguments
+  with, found through the closures `webargs` leaves on the methods it wraps;
+* its docstring.
+
+What is **not** written down is what it returns, because Indico does not say. A
+response is described only where a handler declares one — a handler that reads
+`request.args` by hand does so with `_OPENAPI_PARAMETERS` and `_OPENAPI_RESPONSE`
+on its class, which is how the registered-events endpoint above is documented.
+The classic HTTP API (`/export/...`) is not listed either; it is a different
+mechanism and has [its own documentation](https://docs.getindico.io/en/stable/http-api/).
+
+Everything that cannot be read from a handler degrades to "nothing known": a
+handler that is built oddly costs the document that handler's detail, never the
+document.
+
+### Scalar, and why it is vendored
+
+The page loads one script, `indico_stsa/vendor/scalar/standalone.js`, which is the
+`dist/browser/standalone.js` of the `@scalar/api-reference` package, committed
+as it came. It is not loaded from a CDN: the page is for administrators, it
+should work on a server that cannot reach the internet, and a script from
+somebody else's domain does not belong in a page that is signed in as one. The
+page sends a content security policy that lets it run that script and talk to
+this server, and nothing else — no `unsafe-eval`, no other host — and Scalar is
+told not to send usage reports, not to offer its AI agent and not to fetch its
+fonts, so the policy is a second lock on a door that is already shut.
+
+`python scripts/update-scalar.py <version>` replaces it: it refuses a tarball
+that does not match the SHA-512 the npm registry gives for it, takes out the one
+file, and records the file's SHA-256 in `scalar.json`, which a test holds the
+committed file to. Scalar is MIT-licensed; its licence is next to the file.
+
+*Test Request*, in Scalar, sends a real request from your browser, as you. Anything
+but a `GET` also needs the session's CSRF token in an `X-CSRF-Token` header, which
+is Indico's own protection and is not worked around.
 
 ## Working with the group registration plugin
 
