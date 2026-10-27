@@ -13,9 +13,11 @@ images this way for registration pictures, so the shape is a known quantity.
 import re
 from email.mime.image import MIMEImage
 
+from flask import g
 from markupsafe import Markup, escape
 
 from indico.core import signals
+from indico.core.logger import Logger
 from indico.modules.events.registration.models.registrations import RegistrationState
 from indico.util.i18n import _
 from indico.util.signals import values_from_signal
@@ -23,6 +25,12 @@ from indico.web.flask.util import url_for
 
 from indico_stsa.wallet import badge_path
 
+
+logger = Logger.get('plugin.stsa')
+
+#: Events whose Google Wallet class this request has already tried to create,
+#: kept on `flask.g`.  See `ensure_google_wallet_class`.
+CLASS_ATTEMPTS_KEY = 'stsa_google_wallet_class_attempts'
 
 #: Where the badges are spliced into the finished mail: Indico's registration
 #: e-mail is a card with a grey strip at the bottom, and this puts them at the
@@ -84,6 +92,38 @@ def carries_ticket(registration, template_name, to_managers):
     # An event whose tickets are issued by a plugin -- a check-in service, say
     # -- has no Indico ticket to add to a wallet.
     return not any(values_from_signal(signals.event.is_ticketing_handled.send(regform), single_value=True))
+
+
+def ensure_google_wallet_class(event):
+    """Have Google's ticket class for `event` in place before a link to it goes out.
+
+    Indico creates the class the first time somebody follows a Google link, with
+    a lookup and then a create that nothing guards.  A mail that carries the link
+    gets it followed by every link scanner between us and the inbox, all within a
+    second of delivery, so on an event's first mail the creates collide -- Google
+    answers the losers with a 409 and Indico turns that into a 503.  With the
+    class made here, those requests find it already there.
+
+    Never raises: the ticket matters more than the class, and the link still
+    works without it, just as it did before.  Core's own failure is already
+    logged; ours says what it cost.  Each event is tried once per request, so a
+    bulk approval whose class could not be made (the API down, or merely slow)
+    waits on Google once, not once per registrant.
+    """
+    attempts = g.setdefault(CLASS_ATTEMPTS_KEY, set())
+    if event.id in attempts:
+        return
+    attempts.add(event.id)
+    try:
+        # Only a form that offers Google passes got here, so core's module is
+        # there; imported late so an Indico without one still loads this one.
+        from indico.modules.events.registration.wallets.google import GoogleWalletManager
+        if GoogleWalletManager.event_uses_google_wallet_tickets(event):
+            return
+        GoogleWalletManager(event).create_ticket_class()
+    except Exception:
+        logger.warning('Could not create the Google Wallet class of %r before mailing its link; '
+                       'the link will create it when it is first followed', event, exc_info=True)
 
 
 def _attachment(vendor, path, cid):
@@ -148,6 +188,8 @@ def add_wallet_badges(email, registration, template_name, to_managers):
             # No artwork for this vendor -- Apple's, normally.  Its guidelines
             # do not allow a stand-in, so the mail simply does not mention it.
             continue
+        if vendor == 'google':
+            ensure_google_wallet_class(registration.event)
         cid = f'stsa-wallet-{vendor}-{registration.id}'
         href = url_for(VENDOR_ENDPOINTS[vendor], registration.locator.registrant, _external=True)
         email['attachments'].append(_attachment(vendor, path, cid))

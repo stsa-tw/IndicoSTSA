@@ -320,6 +320,26 @@ spliced in just above the card's grey footer. If a future Indico changes that
 footer the badges land after the card instead — untidy, but still a working
 button.
 
+**The Google link needs the event's Google class to exist.** Indico makes it —
+the part of a pass that every ticket of the event shares — the first time anyone
+follows a Google link, with a lookup and then a create that nothing guards. A
+mail full of those links is followed by every link scanner on the way to the
+inbox (Safe Links on a university mailbox opens them all within a second of
+delivery), so on an event's first mail the creates collide: Google answers the
+losers `409 existingResource` and Indico turns it into a 503. Nobody real is
+hurt, but it is noise in the logs and in Sentry that the plugin's own badges
+cause. So `ensure_google_wallet_class` makes the class before the first mail
+that carries the link, and the links that follow find it.
+
+It never stops the mail — a ticket without a class is exactly what went out
+before, and the link still creates it when first followed, so a failure is a
+logged warning and nothing else. Each event is tried **once per request**, not
+once per registrant: a bulk approval while Google is slow would otherwise wait on
+it for every mail. Two organizers approving at the very same moment can still
+collide, which costs a warning and nothing more. The alternative, making core's
+`create_ticket_class` treat a 409 as success, is a change to Indico itself and
+belongs upstream.
+
 ## 5. The ticket
 
 `indico stsa install-ticket` installs 「門票」, a tear-off stub, and makes it the
