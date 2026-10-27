@@ -60,6 +60,14 @@ APPLIES_TO_BASE = 'base'
 APPLIES_TO_TOTAL = 'total'
 APPLIES_TO = frozenset({APPLIES_TO_BASE, APPLIES_TO_TOTAL})
 
+#: Whether the events API lists a registration form's registrations when nobody
+#: has said either way.  On, so that a participant who asks is answered: off
+#: made every form -- and every form nobody had opened the STSA settings of --
+#: read as "no events" with nothing to say why.  It is the default of the column
+#: *and* the answer for a form with no settings row at all, which is why it is
+#: spelled out once here.
+EVENTS_API_BY_DEFAULT = True
+
 #: The subject prefix Indico ships with, and which this plugin replaces.
 #: ``[Indico@somehost]`` is the error-report variant of the same thing.
 DEFAULT_SUBJECT_PREFIX = '[STSA 活動]'

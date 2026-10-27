@@ -9,9 +9,9 @@ from indico.modules.auth.models.identities import Identity
 from indico.modules.events.registration.models.form_fields import RegistrationFormField
 from indico.modules.events.registration.models.items import RegistrationFormSection
 
-from indico_stsa.constants import (GROUP_MODES_WITH_GROUP, GROUP_PLAN_FIELD, GROUP_PLUGIN, MEMBER_DISCOUNT_FIELD,
-                                  MEMBER_DISCOUNT_FIELD_TITLE, MEMBER_DISCOUNT_SECTION_TITLE, NAME_SOURCES,
-                                  PROFILE_FIELDS)
+from indico_stsa.constants import (EVENTS_API_BY_DEFAULT, GROUP_MODES_WITH_GROUP, GROUP_PLAN_FIELD, GROUP_PLUGIN,
+                                  MEMBER_DISCOUNT_FIELD, MEMBER_DISCOUNT_FIELD_TITLE, MEMBER_DISCOUNT_SECTION_TITLE,
+                                  NAME_SOURCES, PROFILE_FIELDS)
 from indico_stsa.models import SCHEMA
 from indico_stsa.models.settings import STSASettings
 from indico_stsa.profile import profile_values
@@ -86,6 +86,19 @@ def get_settings(regform):
 def is_member_discount_enabled(regform):
     settings = get_settings(regform)
     return settings is not None and settings.member_discount_enabled
+
+
+def is_in_events_api(regform):
+    """Whether the events API lists the registrations made with `regform`.
+
+    What `indico_stsa.registered_events.find_registered` does in SQL, for the
+    pages that show it: no settings row is `EVENTS_API_BY_DEFAULT`, and no tables
+    is not listed at all.
+    """
+    if not tables_exist():
+        return False
+    settings = regform.stsa_settings
+    return EVENTS_API_BY_DEFAULT if settings is None else settings.include_in_events_api
 
 
 def is_group_login_required(regform):

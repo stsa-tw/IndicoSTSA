@@ -6,12 +6,14 @@ so none of it is unit-tested -- see the layering note in CLAUDE.md.
 
 from sqlalchemy.orm import contains_eager
 
+from indico.core.db import db
 from indico.modules.events.models.events import Event
 from indico.modules.events.registration.models.forms import RegistrationForm
 from indico.modules.events.registration.models.registrations import Registration
 from indico.util.date_time import now_utc
 
 from indico_stsa.attendance import STATUSES, overlaps, registration_status
+from indico_stsa.constants import EVENTS_API_BY_DEFAULT
 from indico_stsa.models.settings import STSASettings
 from indico_stsa.util import tables_exist
 
@@ -20,12 +22,13 @@ def find_registered(user, *, statuses, window=(None, None), now=None):
     """``[(registration, status)]`` for `user`, soonest event first.
 
     Only registrations made with a form that is listed in the events API
-    (`STSASettings.include_in_events_api`) are looked at, which is what makes the
-    switch mean what it says: a form that was never configured has no row to
-    join to, so it is out, and so is every form on an install whose tables were
-    never upgraded.  Registrations of events and forms that have been deleted are
-    out as well, and so is anything that is not `user`'s -- nobody is ever asked
-    for somebody else's.
+    (`STSASettings.include_in_events_api`) are looked at.  A form nobody has
+    configured has no settings row, so the join is an outer one and the row's
+    absence reads as `EVENTS_API_BY_DEFAULT` -- the same answer the column gives
+    a row that is created later.  An install whose tables were never upgraded
+    lists nothing instead, whatever the default is.  Registrations of events and
+    forms that have been deleted are out as well, and so is anything that is not
+    `user`'s -- nobody is ever asked for somebody else's.
 
     The status and the window are applied to what that leaves, in Python and not
     in SQL.  There is one participant's worth of rows here, and it keeps the
@@ -37,12 +40,12 @@ def find_registered(user, *, statuses, window=(None, None), now=None):
     registrations = (Registration.query
                      .join(Registration.event)
                      .join(Registration.registration_form)
-                     .join(STSASettings, STSASettings.registration_form_id == RegistrationForm.id)
+                     .outerjoin(STSASettings, STSASettings.registration_form_id == RegistrationForm.id)
                      .filter(Registration.user == user,
                              ~Registration.is_deleted,
                              ~Event.is_deleted,
                              ~RegistrationForm.is_deleted,
-                             STSASettings.include_in_events_api)
+                             db.func.coalesce(STSASettings.include_in_events_api, EVENTS_API_BY_DEFAULT))
                      .options(contains_eager(Registration.event),
                               contains_eager(Registration.registration_form))
                      .order_by(Event.start_dt, Registration.id)

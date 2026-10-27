@@ -949,12 +949,21 @@ listed twice, because the status belongs to the registration.
 
 Only the ones made with a registration form whose **List in the events API**
 switch is on — in the form's *STSA* settings page, and shown in the overview
-next to the member discount. It is off for every form until an organizer turns
-it on, so installing the plugin publishes nothing, and a form without an STSA
-settings row (or a database that has not been upgraded) lists nothing rather
-than everything. It is per form rather than per event so that an event with a
-volunteers' form beside the participants' one can list one and not the other;
-an event with a single form behaves exactly as "per event" would.
+next to the member discount. It is **on** for every form until an organizer
+turns it off, including a form nobody has opened the STSA settings of, which
+has no settings row to say otherwise. It used to be off, which made the
+endpoint answer with an empty list on a fresh install and nothing to say why;
+what it lists is only ever the asking participant's own registrations, so there
+was nothing for the default to protect. A database that has not been upgraded
+lists nothing, whatever the default is. It is per form rather than per event so
+that an event with a volunteers' form beside the participants' one can list one
+and not the other; an event with a single form behaves exactly as "per event"
+would.
+
+Upgrading from 0.6.0 switches every form on: 0.6.0 left every saved row off,
+and a row also exists for a form whose settings were saved for another reason,
+so an "off" already in the table cannot be told from a choice. Switch off the
+forms that should not be listed afterwards.
 
 Registrations that were deleted, on events that were deleted, or made with
 forms that were deleted are never listed.

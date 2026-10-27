@@ -5,7 +5,7 @@ from decimal import Decimal
 from indico.core.db import db
 from indico.util.string import format_repr
 
-from indico_stsa.constants import APPLIES_TO_BASE, PERCENT
+from indico_stsa.constants import APPLIES_TO_BASE, EVENTS_API_BY_DEFAULT, PERCENT
 from indico_stsa.models import SCHEMA
 
 
@@ -13,8 +13,9 @@ class STSASettings(db.Model):
     """STSA's configuration for one registration form.
 
     A row exists only for forms an organizer has actually opened the settings
-    page for; absence means every feature here is off, which is why lookups go
-    through `indico_stsa.util.get_settings` rather than the relationship.
+    page for; absence means every feature here is off -- bar the events API,
+    which `EVENTS_API_BY_DEFAULT` leaves on -- which is why lookups go through
+    `indico_stsa.util.get_settings` rather than the relationship.
     """
 
     __tablename__ = 'regform_settings'
@@ -83,12 +84,12 @@ class STSASettings(db.Model):
 
     #: Whether the registrations made with this form are listed by the events
     #: API (`indico_stsa.registered_events`) when their owner asks for the
-    #: events they have registered for.  Off means never listed, which is also
-    #: what a form with no row at all is.
+    #: events they have registered for.  On unless an organizer switched it off,
+    #: which is also what a form with no row at all is.
     include_in_events_api = db.Column(
         db.Boolean,
         nullable=False,
-        default=False
+        default=EVENTS_API_BY_DEFAULT
     )
 
     registration_form = db.relationship(

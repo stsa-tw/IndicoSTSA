@@ -26,8 +26,8 @@ from indico_stsa.models.settings import STSASettings
 from indico_stsa.payments import find_unpaid, format_outstanding
 from indico_stsa.pricing import apply_member_discount, is_member_discounted
 from indico_stsa.reminders import default_body, default_subject
-from indico_stsa.util import (get_discount_data, get_settings, is_group_plugin_installed, provision_discount_field,
-                              tables_exist)
+from indico_stsa.util import (get_discount_data, get_settings, is_group_plugin_installed, is_in_events_api,
+                              provision_discount_field, tables_exist)
 
 
 class WPSTSA(WPJinjaMixinPlugin, WPManageRegistration):
@@ -59,6 +59,7 @@ class RHSTSAOverview(RHManageRegFormsBase):
             rows.append({
                 'regform': regform,
                 'settings': settings,
+                'in_events_api': is_in_events_api(regform),
                 # Formatted here rather than in the template so that an
                 # organizer reads the same "20%" the participant is shown.
                 'rate': (format_rate(settings.discount_type, settings.discount_value, regform.currency)
@@ -98,7 +99,7 @@ class RHSTSASettings(RHSTSARegFormBase):
             applies_to=settings.applies_to if settings else APPLIES_TO_BASE,
             notice_text=settings.notice_text if settings else '',
             group_login_required=settings.group_login_required if settings else False,
-            include_in_events_api=settings.include_in_events_api if settings else False,
+            include_in_events_api=is_in_events_api(self.regform),
         )
         form = RegFormSettingsForm(obj=defaults, group_plugin_installed=group_plugin)
 

@@ -217,9 +217,13 @@ no_show, pending, withdrawn, rejected). It is a `json_errors` RH under `@oauth_s
 **not** the default scope, which core demands `read:everything` for and reserves for non-API pages — and
 there is no way to name another user, so nothing here is for an organizer's token to be used on.
 
-Which forms are in it is `STSASettings.include_in_events_api`, per **registration form**, default off,
-and the query *joins* the settings row, so a form nobody configured (or an install whose tables were
-never upgraded) lists nothing rather than everything. Status and window are applied in **Python**, to
+Which forms are in it is `STSASettings.include_in_events_api`, per **registration form**, default **on**
+(`constants.EVENTS_API_BY_DEFAULT`, the one place the default is written). A form nobody configured has
+no settings row, so the query *outer*-joins it and `coalesce`s the absence to that constant — an inner
+join would make the default meaningless for exactly the forms that need it — while an install whose
+tables were never upgraded lists nothing (`tables_exist()`). `util.is_in_events_api` is the same answer
+for the pages that display it. It was off in 0.6.0, which read as "always empty"; the
+`e0f4a5b6c7d8` migration switched every existing row on, because an "off" saved by 0.6.0 is not a choice. Status and window are applied in **Python**, to
 the one participant's rows, through `attendance.py` — deliberately not repeated in SQL, so what a
 registration is listed as and what it is filtered by cannot disagree. `unpaid` is not a status (it holds
 a place, so it is `upcoming`/`no_show`; the payload carries `registration.state`), `pending` is (the place

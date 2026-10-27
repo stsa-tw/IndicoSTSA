@@ -50,7 +50,7 @@
                             </td>
                         {% endif %}
                         <td>
-                            {% if row.settings and row.settings.include_in_events_api %}
+                            {% if row.in_events_api %}
                                 <span class="icon-checkmark text-color success"></span>
                                 {% trans %}Listed{% endtrans %}
                             {% else %}

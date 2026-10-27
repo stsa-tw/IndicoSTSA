@@ -40,7 +40,7 @@ from indico_stsa.profile import autofill_profile_fields, keep_profile_claims, no
 from indico_stsa.reglist import REGLIST_FILTER_TEMPLATE, hide_internal_columns
 from indico_stsa.ticket_email import add_wallet_badges
 from indico_stsa.util import (email_lock_member, find_profile_fields, get_settings, is_group_login_required,
-                              is_group_plugin_installed, member_profile)
+                              is_group_plugin_installed, is_in_events_api, member_profile)
 from indico_stsa.wallet import VENDORS, badge_url
 from indico_stsa.wallet_pass import PassTicket
 from indico_stsa.wallet_pass import styled as style_wallet_pass
@@ -706,7 +706,8 @@ class STSAPlugin(IndicoPlugin):
         try:
             tpl = get_plugin_template_module('_regform_settings.html')
             return tpl.render_settings_row(regform=regform, settings=get_settings(regform),
-                                           group_plugin=is_group_plugin_installed())
+                                           group_plugin=is_group_plugin_installed(),
+                                           in_events_api=is_in_events_api(regform))
         except Exception:
             self.logger.exception('Could not render the STSA registration form settings row')
             return ''
